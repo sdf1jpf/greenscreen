@@ -1,10 +1,9 @@
 name: Release
 
-# Stages @greenscreen-dev/worker, @greenscreen-dev/web and
-# create-greenscreen on npm for a maintainer to approve. Either push a tag
-# like v0.1.0 that matches the packages' version, or run the workflow by
-# hand on main ("Run workflow"), which tags the release itself once it is
-# staged.
+# Publishes @greenscreen-dev/worker, @greenscreen-dev/web and
+# create-greenscreen on npm. Either push a tag like v0.1.0 that matches the
+# packages' version, or run the workflow by hand on main ("Run workflow"),
+# which tags the release itself once it is published.
 # Uses npm trusted publishing (OIDC): no token. Each package's
 # settings on npmjs.com name this repo and release.yml as a trusted
 # publisher, and npm adds provenance automatically.
@@ -45,13 +44,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build -w packages/worker
-      # Staged, not published: each version waits on npmjs.com until a
-      # maintainer approves it with 2FA (npm stage approve). The trusted
-      # publishers only allow staging. npm stage doesn't know workspaces.
-      - name: Stage the packages
+      - name: Publish the packages
         run: |
           for p in packages/worker packages/web packages/create; do
-            (cd "$p" && npm stage publish)
+            (cd "$p" && npm publish)
           done
       - name: Tag the release
         if: github.ref_type != 'tag'

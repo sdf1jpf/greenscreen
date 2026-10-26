@@ -3,7 +3,7 @@
 // modified fields back, the way a 3270 talks to CICS.
 
 import { Lock, MIN_COLS, MIN_ROWS, Screen } from "./screen.js";
-import { decodeScreen, encodeRequest } from "./protocol.js";
+import { decodeScreen, encodeRequest, encodeSnapshot } from "./protocol.js";
 
 const LU_NAME = (new URLSearchParams(location.search).get("lu") ?? "WEBTERM1").toUpperCase().slice(0, 8);
 const IDLE_MS = 30 * 60 * 1000; // log off after this long without a key, as TSO does
@@ -25,10 +25,13 @@ const state = {
 	lock: Lock.NONE,
 	insert: false,
 	system: "SYS1", // the application's system name, from /v1/screen/info
+	features: { live: false, snapshot: false }, // what the application serves, from /v1/screen/info
 	commarea: null, // the host's opaque state, handed back with every AID
+	map: "", // the screen's map name, for naming snapshots
 	lastAid: null, // for HOST NOT RESPONDING retries
 	pendingResize: false,
 	timer: null, // the refresh timer, for screens that show live data
+	live: "", // what the screen shows that GET /v1/live announces changes to
 	active: Date.now(), // when the operator last pressed a key or clicked
 };
 
@@ -42,7 +45,7 @@ async function send(aid) {
 	render();
 	const before = state.scr;
 	try {
-		const body = encodeRequest({ aid, scr: before, state: state.commarea, terminal: LU_NAME, system: state.system });
+		const body = encodeRequest({ aid, scr: before, state: state.commarea, terminal: LU_NAME, system: state.system, live: live.open });
 		const res = await fetch("/v1/screen", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
@@ -64,9 +67,15 @@ async function send(aid) {
 		}
 		state.commarea = next.state;
 		state.scr = next.scr;
+		state.map = next.map;
 		if (aid === "REDRAW") state.scr.carry(before);
 		state.lock = Lock.NONE;
-		schedule(next.refresh);
+		state.live = next.live;
+		// With the live connection up, pushes redraw the screen and the
+		// timer is only a fallback.
+		schedule(live.open && next.live ? Math.max(next.refresh, LIVE_FALLBACK_S) : next.refresh);
+		connectLive();
+		if (next.download) save(next.download);
 			} catch (e) {
 		console.error(e);
 		hostMessage("HOST NOT RESPONDING - PRESS ENTER TO RETRY", () => send(state.lastAid));
@@ -76,6 +85,56 @@ async function send(aid) {
 	if (state.pendingResize) fit();
 }
 
+// snapshot has the host draw the screen as it is now, typed input and all,
+// as a PNG or PDF, and saves it: a local copy, like
+// Ctrl+P in the Go terminal, but a picture.
+async function snapshot(format) {
+	if (state.lock === Lock.WAIT || !state.commarea || !state.features.snapshot) return;
+	const body = encodeSnapshot({ scr: state.scr, format, map: state.map, terminal: LU_NAME });
+	state.message = "SNAPSHOT IN PROGRESS";
+	render();
+	try {
+		const res = await fetch("/v1/snapshot", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			credentials: "same-origin",
+			redirect: "manual",
+			body: JSON.stringify(body),
+		});
+		if (!res.ok) throw new Error(`HTTP ${res.status}`);
+		const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? `SNAPSHOT.${format}`;
+		download(await res.blob(), name);
+		state.message = "";
+		render();
+	} catch (e) {
+		console.error(e);
+		state.message = "SNAPSHOT FAILED";
+		render();
+	}
+}
+
+function download(blob, name) {
+	const href = URL.createObjectURL(blob);
+	const a = Object.assign(document.createElement("a"), { href, download: name });
+	document.body.append(a);
+	a.click();
+	a.remove();
+	setTimeout(() => URL.revokeObjectURL(href), 60_000);
+}
+
+// save fetches a file the host sent along with a screen (a PDF of an
+// receipt, say) and hands it to the browser to save.
+async function save({ url, name }) {
+	try {
+		const res = await fetch(url, { credentials: "same-origin", redirect: "manual" });
+		if (!res.ok) throw new Error(`HTTP ${res.status}`);
+		download(await res.blob(), name);
+	} catch (e) {
+		console.error(e);
+		hostMessage(`${name} NOT RECEIVED - PRESS ENTER TO RETRY`.toUpperCase(), () => save({ url, name }));
+	}
+}
+
 // schedule redraws a screen that asks for it every so many seconds. While
 // the operator is busy (a field typed in, or a message showing) it waits
 // another interval rather than send what they have half typed.
@@ -83,11 +142,57 @@ function schedule(seconds) {
 	clearTimeout(state.timer);
 	if (!seconds) return;
 	state.timer = setTimeout(() => {
-		const busy = state.lock !== Lock.NONE || state.message || Object.keys(state.scr.modifiedFields()).length > 0;
-		if (busy) schedule(seconds);
+		if (busy()) schedule(seconds);
 		else send("REDRAW");
 	}, seconds * 1000);
 }
+
+function busy() {
+	return state.lock !== Lock.NONE || state.message || Object.keys(state.scr.modifiedFields()).length > 0;
+}
+
+// --- Live screens --------------------------------------------------------
+
+// GET /v1/live is a WebSocket on which the host says when to redraw: when
+// what a live screen shows has changed (a system log, say), and when a
+// message has come for this user. A redraw waits while the operator is
+// busy; their next key brings the news instead.
+const LIVE_FALLBACK_S = 60;
+const live = { ws: null, open: false, backoff: 1000 };
+
+function connectLive() {
+	if (live.ws || !state.commarea || !state.features.live) return;
+	const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/v1/live`);
+	live.ws = ws;
+	ws.onopen = () => {
+		live.open = true;
+		live.backoff = 1000;
+		if (state.live) schedule(LIVE_FALLBACK_S);
+	};
+	ws.onmessage = (e) => {
+		let ev;
+		try {
+			ev = JSON.parse(e.data);
+		} catch {
+			return; // "pong"
+		}
+		if (ev.event !== "message" && ev.event !== state.live) return;
+		if (!busy() && state.commarea) send("REDRAW");
+	};
+	ws.onclose = () => {
+		const was = live.open;
+		live.ws = null;
+		live.open = false;
+		if (was && state.live) schedule(5); // back to polling until it reconnects
+		setTimeout(connectLive, live.backoff);
+		live.backoff = Math.min(live.backoff * 2, 60_000);
+	};
+}
+
+// A keepalive, so idle proxies leave the connection open.
+setInterval(() => {
+	if (live.open) live.ws.send("ping");
+}, 30_000);
 
 // idleCheck logs the session off once the operator has left it alone for
 // IDLE_MS. Nothing is sent while there is no session or the host is busy.
@@ -109,6 +214,8 @@ const two = (n) => String(n).padStart(2, "0");
 
 // loggedOff shows the host's farewell; Enter starts a new conversation.
 function loggedOff(message) {
+	state.live = "";
+	live.ws?.close();
 	state.scr = new Screen(state.scr.rows, state.scr.cols);
 	state.scr.text(2, 2, message || "LOGGED OFF", { color: "white" });
 	state.scr.text(4, 2, "PRESS ENTER TO LOG ON AGAIN", { color: "turquoise" });
@@ -329,6 +436,12 @@ function reset() {
 function onKey(e) {
 	const k = keyName(e);
 	if (!state.started) return;
+	// Ctrl+S saves a picture of the screen, Ctrl+Shift+S a PDF.
+	if (k === "Ctrl+s") {
+		e.preventDefault();
+		snapshot(e.shiftKey ? "pdf" : "png");
+		return;
+	}
 	if (k === "Escape" || k === "Ctrl+r") {
 		e.preventDefault();
 		reset();
@@ -410,6 +523,7 @@ function onKeyBar(e) {
 	const b = e.target.closest("button");
 	if (!b) return;
 	if (b.dataset.aid === "RESET") reset();
+	else if (b.dataset.snap) snapshot(b.dataset.snap);
 	else aidKey(b.dataset.aid);
 }
 
@@ -429,8 +543,9 @@ window.addEventListener("resize", () => {
 	resizeTimer = setTimeout(fit, 120);
 });
 
-// appInfo asks the application what it calls itself (GET /v1/screen/info)
-// for the page title and the status line. Without it the defaults stay.
+// appInfo asks the application what it calls itself and what it serves
+// (GET /v1/screen/info), for the page title, the status line, the live
+// connection and the SNAP key. Without it the defaults stay.
 async function appInfo() {
 	try {
 		const res = await fetch("/v1/screen/info", { credentials: "same-origin", redirect: "manual" });
@@ -438,6 +553,8 @@ async function appInfo() {
 		const info = await res.json();
 		if (info.system) state.system = info.system;
 		if (info.title) document.title = info.title;
+		state.features = { live: info.live === true, snapshot: info.snapshot === true };
+		document.querySelector("[data-snap]")?.toggleAttribute("hidden", !state.features.snapshot);
 	} catch {
 		// keep the defaults
 	}

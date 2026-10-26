@@ -5,11 +5,12 @@
 //	GET    /v1/screen/info  what the application calls itself; no logon
 //	POST   /v1/session      logon: -> {"userid"}
 //	POST   /v1/screen       the application's screens; see docs/protocol.md
+//	GET    /v1/live         WebSocket: when to redraw the screen (live.go)
+//	POST   /v1/snapshot     the screen drawn as a PNG or PDF, if the app has it
 //
 // The terminal reaches the application's data only through the screens.
 // Everything except health and info is behind Cloudflare Access (see
-// access.go). Errors are returned as
-// {"error":{"code","message","field"}}.
+// access.go). Errors are returned as {"error":{"code","message","field"}}.
 package api
 
 import "errors"
@@ -44,10 +45,12 @@ type ScreenRequest struct {
 	Terminal string            `json:"terminal,omitempty"`
 	System   string            `json:"system,omitempty"`
 	TZOffset int               `json:"tz_offset"`
+	Live     bool              `json:"live,omitempty"` // listening on GET /v1/live
 }
 
 // ScreenResponse holds the next screen and the commarea to send back with
-// the next request, or Logoff when the operator has logged off.
+// the next request, or Logoff when the operator has logged off. Download,
+// when set, is a file sent along with the screen, such as an invoice PDF.
 type ScreenResponse struct {
 	V      int     `json:"v"`
 	State  string  `json:"state"`
@@ -55,6 +58,14 @@ type ScreenResponse struct {
 	Logoff *struct {
 		Message string `json:"message"`
 	} `json:"logoff"`
+	Download *Download `json:"download"`
+}
+
+// Download names a file to fetch from the API (URL is a path such as
+// /v1/invoices/INV00012/pdf) and save as Name.
+type Download struct {
+	URL  string `json:"url"`
+	Name string `json:"name"`
 }
 
 type Screen struct {
@@ -66,6 +77,10 @@ type Screen struct {
 	// Refresh, in seconds, asks the client to redraw the screen this often
 	// while the operator leaves it alone. Zero never does.
 	Refresh int `json:"refresh"`
+	// Live names what the screen shows that GET /v1/live announces changes
+	// to, such as "syslog". While listening, the client redraws on those
+	// events and Refresh is only a fallback.
+	Live string `json:"live"`
 }
 
 // Field is an output field (Text) or, when Name is set, an input field of
@@ -87,6 +102,34 @@ type Field struct {
 	// sent back as typed: input kept across help, a picked value, or a
 	// retrieved command.
 	Modified bool `json:"modified"`
+}
+
+// SnapshotRequest is the body of POST /v1/snapshot: the screen as the
+// terminal shows it, to be drawn as a PNG or PDF.
+type SnapshotRequest struct {
+	Format   string         `json:"format"` // "png" or "pdf"
+	Map      string         `json:"map,omitempty"`
+	Terminal string         `json:"terminal,omitempty"`
+	Screen   SnapshotScreen `json:"screen"`
+}
+
+type SnapshotScreen struct {
+	Rows   int         `json:"rows"`
+	Cols   int         `json:"cols"`
+	Fields []SnapField `json:"fields"`
+	Cursor *Cursor     `json:"cursor,omitempty"`
+}
+
+// SnapField is one field as it shows, input fields with what is in them.
+type SnapField struct {
+	Row       int    `json:"row"`
+	Col       int    `json:"col"`
+	Text      string `json:"text"`
+	Color     string `json:"color,omitempty"`
+	Bright    bool   `json:"bright,omitempty"`
+	Highlight string `json:"highlight,omitempty"`
+	Hidden    bool   `json:"hidden,omitempty"`
+	Input     bool   `json:"input,omitempty"`
 }
 
 // Cursor is a position, 1-based, and the input field it is in, if any.
@@ -112,9 +155,11 @@ const codeUnauthorized = "unauthorized"
 // AppInfo is GET /v1/screen/info: what the application calls itself, for
 // the logon screen and the client's own messages.
 type AppInfo struct {
-	V      int      `json:"v"`
-	Title  string   `json:"title"`
-	System string   `json:"system"`
-	Prefix string   `json:"prefix"`
-	Banner []string `json:"banner"`
+	V        int      `json:"v"`
+	Title    string   `json:"title"`
+	System   string   `json:"system"`
+	Prefix   string   `json:"prefix"`
+	Banner   []string `json:"banner"`
+	Live     bool     `json:"live"`     // serves GET /v1/live
+	Snapshot bool     `json:"snapshot"` // serves POST /v1/snapshot
 }

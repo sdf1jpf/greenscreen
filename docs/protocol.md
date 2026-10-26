@@ -47,6 +47,7 @@ through Cloudflare Access by default.
 | `rows`, `cols` | Size of the presentation space. The Worker lays the screen out for it, no smaller than 24x80. |
 | `terminal`, `system` | The terminal (LU) name and system name to show on screens. Optional. |
 | `tz_offset` | The client's offset from UTC in minutes (east positive), so times show in local time. Optional, default 0. |
+| `live` | `true` while the client is connected to `GET /v1/live` (see Live screens). Optional. |
 
 ## Response
 
@@ -120,6 +121,74 @@ interval instead while the keyboard is locked or any input field has been
 typed in, so a refresh never takes what the operator is typing. Absent or 0
 means never.
 
+### Download
+
+A reply can also send the operator a file, such as a receipt or a report as a PDF, next to `screen`:
+
+```json
+{ "v": 1, "state": "…", "screen": { … }, "download": { "url": "/v1/receipts/R000012/pdf", "name": "R000012.pdf" } }
+```
+
+The client fetches `url`, an API path on the same host signed on the same
+way as `/v1/screen`, and saves or opens it as `name`. A client ignores a
+`url` that is not a path starting `/v1/`, and keeps `name` to a plain file
+name. The screen's message line says what was sent; the Go terminal
+replaces it with where it saved the file (its `-print-dir`), and the
+browser hands the file to its downloads. It comes with one screen only.
+
+### Snapshots
+
+A client can ask for a picture of the screen it is showing, typed input
+included, with `POST /v1/snapshot`. It sends the presentation space as
+fields, one per attribute byte, in the response's field format, with input
+fields as plain text marked `input`:
+
+```json
+{
+  "format": "png",
+  "map": "POSM00",
+  "terminal": "TERM0001",
+  "screen": {
+    "rows": 24, "cols": 80,
+    "fields": [
+      { "row": 1, "col": 2, "text": "POSM00", "color": "blue" },
+      { "row": 4, "col": 14, "text": "1       ", "input": true, "highlight": "underscore" }
+    ],
+    "cursor": { "row": 4, "col": 17 }
+  }
+}
+```
+
+`format` is `png` (the default) or `pdf`. A field without a color takes the
+3270 base color: blue or white (bright) for protected text, green or red for
+input. Hidden fields are drawn blank. The reply is the file, with a
+`Content-Disposition` naming it after `map` and the time, such as
+`POSM00-202610261112.png`. An app that serves snapshots says so in its
+[app info](#app-info) (`snapshot: true`); clients hide the key otherwise.
+
+### Live screens
+
+A screen whose data changes on its own also carries `"live"`, naming what
+it follows, such as `"syslog"` on a console that follows the end of a log.
+If the app's [app info](#app-info) says `live: true`, a client can open a
+WebSocket to `GET /v1/live` (signed on like the rest) and get a push
+instead of polling:
+
+```json
+{"event": "syslog", "seq": 1234}
+{"event": "message"}
+```
+
+An event named like the screen's `live` means its data has moved: redraw
+(send `REDRAW`). `message` means a message has come for this user, such as
+a TSO SEND: redraw whatever is showing, and the message appears on the
+message line. Both
+follow the refresh rule above: a redraw waits while the operator is busy.
+While connected the client sends `live: true`, may stretch `refresh` to a
+slow fallback (the clients use 60 seconds), and should send the text `ping`
+every 30 seconds or so; the answer is `pong`. If the socket drops, go back
+to `refresh` and reconnect with a backoff.
+
 ### Cursor
 
 `cursor` is `{"field": name}` (the first position of that input field),
@@ -131,11 +200,13 @@ means never.
 call the application on its logon screen and status line:
 
 ```json
-{ "v": 1, "title": "POINT OF SALE", "system": "POS1", "prefix": "POS", "banner": ["STORE 0042"] }
+{ "v": 1, "title": "POINT OF SALE", "system": "POS1", "prefix": "POS", "banner": ["STORE 0042"], "live": false, "snapshot": false }
 ```
 
-`prefix` starts the message IDs the server sends (`POS0001W`); clients use
-it for their own messages too, such as "host not responding". `banner` is
+`live` and `snapshot`, when true, say the app serves `GET /v1/live` and
+`POST /v1/snapshot`. `prefix` starts the message IDs the server sends
+(`POS0001W`); clients use it for their own messages too, such as "host not
+responding". `banner` is
 optional. A client that gets a 404 here falls back to its own defaults.
 
 ## Commarea

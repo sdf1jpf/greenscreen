@@ -461,3 +461,34 @@ func TestListensOnlyWhenTheAppServesLive(t *testing.T) {
 		s.stopListening()
 	}
 }
+
+// infoAPI is a backend whose app info Access only lets through after logon.
+type infoAPI struct {
+	fakeAPI
+	asked int
+}
+
+func (f *infoAPI) Info(context.Context) (api.AppInfo, error) {
+	f.asked++
+	if !f.loggedOn {
+		return api.AppInfo{}, errors.New("api: info: 302 Found")
+	}
+	return api.AppInfo{Title: "POINT OF SALE", Prefix: "POS", Live: true, Snapshot: true}, nil
+}
+
+func TestInfoIsAskedAgainAfterLogon(t *testing.T) {
+	f := &infoAPI{}
+	cfg := &Config{SystemName: "TEST", Backend: f}
+	s := NewSession(cfg, "TERM0001")
+	s.Submit(t3.AIDEnter, s.Start())
+	if f.asked != 1 || !cfg.HaveInfo || !cfg.Live || !cfg.Snapshots || cfg.Prefix != "POS" || cfg.SystemName != "TEST" {
+		t.Fatalf("info after logon: asked %d, %+v", f.asked, cfg)
+	}
+	// Known already: not asked again.
+	known := &infoAPI{}
+	k := NewSession(&Config{SystemName: "TEST", Backend: known, HaveInfo: true}, "TERM0001")
+	k.Submit(t3.AIDEnter, k.Start())
+	if known.asked != 0 {
+		t.Fatalf("asked again: %d", known.asked)
+	}
+}

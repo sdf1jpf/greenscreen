@@ -65,6 +65,24 @@ type Config struct {
 	DownloadDir string // where files sent with a screen are saved
 	Live        bool   // the application serves GET /v1/live
 	Snapshots   bool   // the application serves POST /v1/snapshot
+	HaveInfo    bool   // the above came from the application (SetInfo)
+}
+
+// Informer is a Backend that can say what the application calls itself and
+// what it serves: GET /v1/screen/info. *api.Client implements it.
+type Informer interface {
+	Info(ctx context.Context) (api.AppInfo, error)
+}
+
+// SetInfo takes what the application says about itself. The system name
+// is only taken if none was given.
+func (c *Config) SetInfo(info api.AppInfo) {
+	c.Title, c.Prefix, c.Banner, c.Tagline = info.Title, info.Prefix, info.Banner, info.Tagline
+	c.Live, c.Snapshots = info.Live, info.Snapshot
+	if c.SystemName == "" {
+		c.SystemName = info.System
+	}
+	c.HaveInfo = true
 }
 
 // msg builds one of the terminal's own message IDs: msg("0298E").

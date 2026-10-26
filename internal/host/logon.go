@@ -90,6 +90,14 @@ func (s *Session) submitLogon(aid t3.AID, scr *t3.Screen) *t3.Screen {
 		return l.Render(s)
 	}
 	s.user = who
+	if inf, ok := s.cfg.Backend.(Informer); ok && !s.cfg.HaveInfo {
+		// The info could not be read before logon, as when Cloudflare
+		// Access guards the whole host: signed on now, try again, so live
+		// screens and snapshots work.
+		if info, err := inf.Info(s.ctx()); err == nil {
+			s.cfg.SetInfo(info)
+		}
+	}
 	return s.start()
 }
 

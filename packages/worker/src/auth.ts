@@ -115,3 +115,40 @@ export function accessAuth<E extends AccessEnv>(userId: (claims: Claims) => stri
 		return userId(claims);
 	};
 }
+
+// Headers a Cloudflare Access service token is sent in.
+export const CLIENT_ID_HEADER = "CF-Access-Client-Id";
+export const CLIENT_SECRET_HEADER = "CF-Access-Client-Secret";
+
+// tokenHash is how serviceTokenAuth keeps a secret: SHA-256, in hex.
+export async function tokenHash(secret: string): Promise<string> {
+	const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+	return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// serviceTokenAuth signs on the clients that hold one of a known set of
+// service tokens, checking the client ID and secret they send itself, for
+// a server Cloudflare Access isn't in front of: one on a store's own
+// network, say, that its terminals reach directly. They keep the token
+// they use through Access, so a terminal moves between the two by its URL
+// alone. tokens maps each client ID to tokenHash(secret); the userid is
+// the client ID, lower case, as accessAuth's claims.common_name.
+export function serviceTokenAuth<E>(tokens: (env: E) => Record<string, string> | undefined): Auth<E> {
+	return async (env, req) => {
+		const id = req.headers.get(CLIENT_ID_HEADER)?.trim().toLowerCase();
+		const secret = req.headers.get(CLIENT_SECRET_HEADER);
+		const known = Object.fromEntries(Object.entries(tokens(env) ?? {}).map(([k, v]) => [k.toLowerCase(), v.toLowerCase()]));
+		const want = id ? known[id] : undefined;
+		if (!id || !secret || !want || !same(await tokenHash(secret), want)) {
+			throw new HttpError(401, "unauthorized", "not signed on: send a known service token");
+		}
+		return id;
+	};
+}
+
+// same compares two strings in time that doesn't depend on where they differ.
+function same(a: string, b: string): boolean {
+	let d = a.length ^ b.length;
+	for (let i = 0; i < Math.max(a.length, b.length); i++) d |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+	return d === 0;
+}

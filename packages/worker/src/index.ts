@@ -2,7 +2,10 @@
 // See docs/protocol.md for the wire format and README.md for a tour.
 
 export { createApp, signedOn, user, USER_HEADER, type AppConfig, type AppEnv } from "./app.js";
-export { accessAuth, userIdFor, ASSERTION_HEADER, type AccessEnv, type Auth, type Claims } from "./auth.js";
+export {
+	accessAuth, serviceTokenAuth, tokenHash, userIdFor, ASSERTION_HEADER, CLIENT_ID_HEADER, CLIENT_SECRET_HEADER,
+	type AccessEnv, type Auth, type Claims,
+} from "./auth.js";
 export { seal, open } from "./commarea.js";
 export {
 	screenHandler, requestKeys,

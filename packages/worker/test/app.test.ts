@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-	createApp, header, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, values,
+	createApp, header, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, serviceTokenAuth, tokenHash, values,
 	USER_HEADER, type AccessEnv, type PanelState, type ScreenJSON,
 } from "../src";
 
@@ -212,5 +212,25 @@ describe("app routes", () => {
 		const a = app();
 		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user") }));
 		expect(await (await a.request("/v1/whoami", {}, devEnv)).json()).toEqual({ user: "TESTER" });
+	});
+});
+
+describe("serviceTokenAuth", () => {
+	it("signs on a known service token as its client ID, and nothing else", async () => {
+		const hash = await tokenHash("s3cret");
+		const a = createApp<Env & { TOKENS?: Record<string, string> }>({
+			app: { title: "TEST SYSTEM", prefix: "TST", system: "SYS9" },
+			programs: { menu },
+			auth: serviceTokenAuth((env) => env.TOKENS),
+		});
+		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user") }));
+		const env = { TOKENS: { "Reg-1.access": hash } };
+		const who = (h: Record<string, string>) => a.request("/v1/whoami", { headers: h }, env);
+		const ok = await who({ "CF-Access-Client-Id": "REG-1.access", "CF-Access-Client-Secret": "s3cret" });
+		expect(await ok.json()).toEqual({ user: "reg-1.access" });
+		expect((await who({ "CF-Access-Client-Id": "reg-1.access", "CF-Access-Client-Secret": "wrong" })).status).toBe(401);
+		expect((await who({ "CF-Access-Client-Id": "reg-2.access", "CF-Access-Client-Secret": "s3cret" })).status).toBe(401);
+		expect((await who({})).status).toBe(401);
+		expect((await a.request("/v1/whoami", { headers: { "CF-Access-Client-Id": "reg-1.access", "CF-Access-Client-Secret": "s3cret" } }, {})).status).toBe(401);
 	});
 });

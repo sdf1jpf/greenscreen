@@ -160,6 +160,18 @@ describe("screen engine", () => {
 		expect(texts(after)).toContain("TST0002E NOT AUTHORIZED");
 	});
 
+	it("takes input only for the fields drawn, as long as they were drawn", async () => {
+		const start = await send({ aid: "START" });
+		const c = await send({ aid: "ENTER", state: start.state, fields: { option: "1 5" } });
+		const cut = await send({ aid: "ENTER", state: c.state, fields: { step: "12345" } });
+		expect(texts(cut)).toContain("COUNT 1239");
+		const letters = await send({ aid: "ENTER", state: cut.state, fields: { step: "9x" } });
+		expect(texts(letters)).toContain("COUNT 1240");
+		const big = "9".repeat(200_000);
+		const h = await send({ aid: "PF1", state: letters.state, fields: { step: big, other: big }, modified: ["step", "other"] });
+		expect(h.state.length).toBeLessThan(4000);
+	});
+
 	it("refuses a commarea older than its lifetime", async () => {
 		vi.useFakeTimers({ toFake: ["Date"] });
 		const start = await send({ aid: "START" });

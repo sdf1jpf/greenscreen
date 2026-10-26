@@ -218,7 +218,10 @@ then a state that was changed on the way is treated like a lost one: the
 reply is the first screen with a `xxx0001W` warning. The same goes for a
 state sent back by a different user than the one it was issued to, and for
 one older than the server's lifetime for it (30 minutes by default, the idle
-limit), since each reply carries a fresh one.
+limit), since each reply carries a fresh one. The commarea also lists the
+input fields of its screen, and the server ignores input for any other
+field, cuts values to the field's length, and drops a numeric field's value
+if it holds more than digits, `.` and `-`.
 
 `@greenscreen-dev/worker` refuses to serve screens without a `stateKey`,
 except under `wrangler dev` with `DEV_USER` or when the app sets

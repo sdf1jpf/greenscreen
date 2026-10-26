@@ -222,7 +222,7 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 				next = unlock(current);
 				before = undefined;
 				next.msg = `${msgId(ctx, "1202E")} LOCK LOST TO ${l.user} ON ${l.terminal} - ${l.resource} NOT CHANGED`;
-			} else if (aid === "PF1" && current.p !== "help" && !config.programs.help) {
+			} else if (aid === "PF1" && current.p !== "help") {
 				// PF1 is help on every screen: for the field the cursor is in if
 				// it has any, otherwise the tutorial. What the operator typed is
 				// kept for when they come back.

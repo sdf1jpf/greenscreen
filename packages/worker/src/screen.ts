@@ -38,6 +38,7 @@ export interface AppInfo {
 	prefix: string; // three letters that start the framework's message IDs, e.g. "POS"
 	system: string; // the system name when the client sends none
 	banner?: string[]; // lines for the clients' logon screen
+	tagline?: string; // under the banner on the logon screen, instead of the title
 }
 
 // Ctx is what a panel knows about the request it is answering. E is the

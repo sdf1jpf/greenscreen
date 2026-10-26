@@ -416,6 +416,11 @@ func TestAppNamesItselfOnLogon(t *testing.T) {
 	if !strings.Contains(got.Row(23), "POS0000W PF5 IS NOT ACTIVE") {
 		t.Errorf("message line = %q", got.Row(23))
 	}
+
+	s = NewSession(&Config{SystemName: "SYS1", Title: "Customer Information System", Tagline: "Modern Mainframe Experience", Backend: f}, "TERM0001")
+	if text := strings.Join(rows(s.Start()), "\n"); !strings.Contains(text, "M O D E R N   M A I N F R A M E   E X P E R I E N C E") {
+		t.Errorf("logon screen lacks the tagline:\n%s", text)
+	}
 }
 
 func rows(scr *t3.Screen) []string {

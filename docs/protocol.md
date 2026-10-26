@@ -203,6 +203,7 @@ call the application on its logon screen and status line:
 { "v": 1, "title": "POINT OF SALE", "system": "POS1", "prefix": "POS", "banner": ["STORE 0042"], "live": false, "snapshot": false }
 ```
 
+`tagline`, if present, goes under the banner instead of the title.
 `live` and `snapshot`, when true, say the app serves `GET /v1/live` and
 `POST /v1/snapshot`. `prefix` starts the message IDs the server sends
 (`POS0001W`); clients use it for their own messages too, such as "host not

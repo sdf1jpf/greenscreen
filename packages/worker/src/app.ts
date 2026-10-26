@@ -55,8 +55,11 @@ export function createApp<E extends object = AccessEnv>(config: AppConfig<E>): H
 	// The clients ask this before logon to title their logon screen, so it
 	// is not signed on and says nothing secret.
 	app.get("/v1/screen/info", () => {
-		const { title, system, prefix, banner } = config.app;
-		return json(200, { v: 1, title, system, prefix, ...(banner ? { banner } : {}), live: !!config.live, snapshot: !!config.snapshot });
+		const { title, system, prefix, banner, tagline } = config.app;
+		return json(200, {
+			v: 1, title, system, prefix, ...(banner ? { banner } : {}), ...(tagline ? { tagline } : {}),
+			live: !!config.live, snapshot: !!config.snapshot,
+		});
 	});
 
 	app.post("/v1/session", guard, (c) => json(201, { userid: user(c) }));

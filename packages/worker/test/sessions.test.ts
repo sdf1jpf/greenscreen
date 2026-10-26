@@ -253,6 +253,18 @@ describe("engine hooks", () => {
 		expect(seen).toBe(true);
 	});
 
+	it("opens the app's own help program on PF1", async () => {
+		const own = panel<PanelState & { p: "help" }, Env>({
+			render: (ctx) => newScreen(ctx, "TSTH99"),
+			handle: (_ctx, s) => s.back!,
+		});
+		const a = createApp<Env>({ app: { title: "T", prefix: "TST", system: "S" }, programs: { menu, edit, help: own } });
+		const t = terminal(a as ReturnType<typeof app>, "alice", "TERM0001");
+		await t.send("START");
+		expect((await t.send("PF1")).screen.map).toBe("TSTH99");
+		expect((await t.send("PF3")).screen.map).toBe("TSTM00");
+	});
+
 	it("still takes a plain field help table", async () => {
 		const lookup = helpTable<Env>({ name: { title: "NAME", lines: [] } });
 		expect(await lookup({ p: "edit" }, "name", {} as Ctx<Env>)).toMatchObject({ title: "NAME" });

@@ -88,10 +88,13 @@ terminal uses its defaults. `-h` lists the flags.
 
 Bump the version in `packages/worker`, `packages/web` and `packages/create`
 (and the template's dependencies), then push a matching tag, e.g. `v0.2.0`,
-or run the Release workflow by hand on main, which tags it once it's published.
-The Release workflow tests and publishes to npm through trusted publishing
-(OIDC), so there is no npm token: each package lists `sdf1jpf/greenscreen`
-and `release.yml` as its trusted publisher on npmjs.com. The Go terminal is released by the same tag: `go install
+or run the Release workflow by hand on main, which tags it once it's staged.
+The Release workflow tests and stages the packages on npm through trusted
+publishing (OIDC), so there is no npm token. A maintainer then approves
+each staged version with 2FA (`npm stage list`, then `npm stage approve
+<id>`, or on npmjs.com) before it goes live. Each package lists
+`sdf1jpf/greenscreen` and `release.yml` as its trusted publisher, allowed
+to stage only. The Go terminal is released by the same tag: `go install
 github.com/sdf1jpf/greenscreen/cmd/greenscreen@v0.2.0`.
 
 ## License

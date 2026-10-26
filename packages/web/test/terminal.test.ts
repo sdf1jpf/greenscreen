@@ -1,7 +1,7 @@
 // The browser terminal's screen model and protocol (public/), which run in
 // the page; they have no DOM dependencies, so they are tested here.
 import { describe, expect, it } from "vitest";
-import { decodeScreen, encodeRequest } from "../public/protocol.js";
+import { decodeScreen, encodeRequest, encodeSnapshot } from "../public/protocol.js";
 import { Lock, Screen } from "../public/screen.js";
 
 const response = {
@@ -31,6 +31,28 @@ describe("browser terminal", () => {
 		const body = encodeRequest({ aid: "ENTER", scr, state: "abc", system: "SYS1" });
 		expect(body.modified).toEqual(["status"]);
 		expect(body.system).toBe("SYS1");
+	});
+
+	it("takes a file sent with a screen only from the API", () => {
+		const res = structuredClone(response) as Record<string, unknown>;
+		expect((decodeScreen(res) as { download: unknown }).download).toBeNull();
+		res.download = { url: "/v1/receipts/R00001/pdf", name: "../R 1.pdf" };
+		expect((decodeScreen(res) as { download: unknown }).download).toEqual({ url: "/v1/receipts/R00001/pdf", name: ".._R_1.pdf" });
+		res.download = { url: "https://evil.example/x.pdf", name: "x.pdf" };
+		expect((decodeScreen(res) as { download: unknown }).download).toBeNull();
+		res.download = { url: "//evil.example/v1/x", name: "x.pdf" };
+		expect((decodeScreen(res) as { download: unknown }).download).toBeNull();
+	});
+
+	it("sends the screen as it shows it for a snapshot", () => {
+		const { scr, map } = decodeScreen(response) as { scr: Screen; map: string };
+		expect(map).toBe("POSM01");
+		scr.type("1", false);
+		const body = encodeSnapshot({ scr, format: "pdf", map, terminal: "WEBTERM1" });
+		expect(body).toMatchObject({ format: "pdf", map: "POSM01", terminal: "WEBTERM1" });
+		expect(body.screen.fields).toContainEqual({ row: 1, col: 2, text: "POSM01", color: "blue" });
+		expect(body.screen.fields).toContainEqual({ row: 4, col: 12, text: "AC   ", highlight: "underscore", input: true });
+		expect(body.screen.fields).toContainEqual({ row: 5, col: 12, text: "1   ", highlight: "underscore", input: true });
 	});
 
 	it("lays out fields BMS style", () => {
@@ -69,6 +91,8 @@ describe("browser terminal", () => {
 			terminal: "WEBTERM1",
 		});
 		expect(encodeRequest({ aid: "START", scr, state: "abc" }).state).toBeUndefined();
+		expect(encodeRequest({ aid: "ENTER", scr, state: "abc" }).live).toBeUndefined();
+		expect(encodeRequest({ aid: "ENTER", scr, state: "abc", live: true }).live).toBe(true);
 	});
 
 	it("keeps typed input across a redraw at a new size", () => {
@@ -83,6 +107,8 @@ describe("browser terminal", () => {
 	it("reads the refresh interval of a live screen", () => {
 		expect(decodeScreen(response).refresh).toBe(0);
 		expect(decodeScreen({ ...response, screen: { ...response.screen, refresh: 5 } }).refresh).toBe(5);
+		expect(decodeScreen(response).live).toBe("");
+		expect(decodeScreen({ ...response, screen: { ...response.screen, live: "syslog" } }).live).toBe("syslog");
 	});
 
 	it("passes a logoff through", () => {

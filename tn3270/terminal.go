@@ -56,6 +56,12 @@ type redrawReply struct{ scr *Screen }
 // be drawn again.
 type refreshTick struct{ gen int }
 
+// snapReply comes when a snapshot is saved, or failed.
+type snapReply struct{ err error }
+
+// pushed comes when a Pusher host asks for a redraw.
+type pushed struct{}
+
 // clockTick comes on the minute, to move the clock in the status line.
 type clockTick struct{}
 
@@ -80,7 +86,7 @@ func New(host Host, opts Options) *Terminal {
 	}
 }
 
-func (t *Terminal) Init() tea.Cmd { return batch(t.clock(), t.idle()) }
+func (t *Terminal) Init() tea.Cmd { return batch(t.clock(), t.idle(), t.awaitPush()) }
 
 func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -102,8 +108,15 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		msg.scr.Carry(t.scr)
 		t.scr = msg.scr
 		return t, batch(t.fit(), t.schedule())
+	case snapReply:
+		t.print = "SNAPPED"
+		if msg.err != nil {
+			t.print = "SNAP ERR"
+		}
 	case refreshTick:
 		return t, t.refresh(msg)
+	case pushed:
+		return t, batch(t.redrawIdle(), t.awaitPush())
 	case clockTick:
 		return t, t.clock()
 	case idleTick:
@@ -171,6 +184,11 @@ func (t *Terminal) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			t.print = "PRINTED"
 		}
 		return t, nil
+	}
+	if s == "ctrl+s" || esc && (s == "s" || s == "S") {
+		// A picture of the screen, made by the host: Ctrl+S for a PNG,
+		// Esc then S for a PDF.
+		return t, t.snapshot(map[bool]string{false: "png", true: "pdf"}[esc])
 	}
 	if s == "esc" || s == "ctrl+r" {
 		t.lock = LockNone
@@ -276,6 +294,22 @@ func (t *Terminal) Print() (string, error) {
 	return name, f.Close()
 }
 
+// snapshot asks the host for a picture of the screen as it is now. The
+// keyboard stays free; the status line says when it is saved.
+func (t *Terminal) snapshot(format string) tea.Cmd {
+	sn, ok := t.host.(Snapshotter)
+	if !ok {
+		t.print = "SNAP ERR"
+		return nil
+	}
+	t.print = "SNAP..."
+	scr := t.scr.Clone()
+	return func() tea.Msg {
+		_, err := sn.Snapshot(scr, format)
+		return snapReply{err: err}
+	}
+}
+
 // send locks the keyboard and transmits the screen to the host.
 func (t *Terminal) send(aid AID) tea.Cmd {
 	t.lock = LockWait
@@ -332,9 +366,33 @@ func (t *Terminal) refresh(msg refreshTick) tea.Cmd {
 	if t.lock != LockNone || len(t.scr.Modified()) > 0 {
 		return t.tick()
 	}
+	return t.redrawIdle()
+}
+
+// redrawIdle asks the host for the screen again, unless the operator is
+// busy: then the next key, or the refresh timer, brings the news.
+func (t *Terminal) redrawIdle() tea.Cmd {
+	if t.lock != LockNone || len(t.scr.Modified()) > 0 {
+		return nil
+	}
 	t.lock = LockWait
 	host, rows, cols := t.host, t.scr.Rows(), t.scr.Cols()
 	return func() tea.Msg { return redrawReply{scr: host.Redraw(rows, cols)} }
+}
+
+// awaitPush waits for the host to ask for a redraw, if it can.
+func (t *Terminal) awaitPush() tea.Cmd {
+	p, ok := t.host.(Pusher)
+	if !ok {
+		return nil
+	}
+	ch := p.Pushes()
+	return func() tea.Msg {
+		if _, ok := <-ch; !ok {
+			return nil
+		}
+		return pushed{}
+	}
 }
 
 // clock waits for the next minute, when the status line's clock changes.

@@ -31,17 +31,18 @@ func main() {
 		lu      = flag.String("lu", "TERM0001", "terminal name shown in the status line")
 		latency = flag.Duration("latency", 0, "extra delay added to every host response, for effect")
 		idle    = flag.Duration("idle", 30*time.Minute, "log off after this long without a key pressed (0 never)")
-		prints  = flag.String("print-dir", defaultPrintDir(), "where the PRINT key (Ctrl+P) saves screens")
+		prints  = flag.String("print-dir", defaultPrintDir(), "where the PRINT key (Ctrl+P) saves screens, and files the host sends are saved")
 	)
 	flag.Parse()
 
 	client := api.NewClient(*apiURL, access(*apiURL))
-	cfg := &host.Config{SystemName: *sysName, Backend: client}
+	cfg := &host.Config{SystemName: *sysName, Backend: client, DownloadDir: *prints}
 	// The application names itself. If it can't be reached yet, the logon
 	// screen says so when Enter is pressed.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	if info, err := client.Info(ctx); err == nil {
 		cfg.Title, cfg.Prefix, cfg.Banner = info.Title, info.Prefix, info.Banner
+		cfg.Live, cfg.Snapshots = info.Live, info.Snapshot
 		if cfg.SystemName == "" {
 			cfg.SystemName = info.System
 		}

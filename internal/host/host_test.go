@@ -2,8 +2,12 @@ package host
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sdf1jpf/greenscreen/internal/api"
 	t3 "github.com/sdf1jpf/greenscreen/tn3270"
@@ -262,6 +266,142 @@ func TestTimeoutOnLogonScreenStaysThere(t *testing.T) {
 	}
 }
 
+// fileAPI also serves downloads, and sends one with the next screen.
+type fileAPI struct {
+	fakeAPI
+	send  *api.Download
+	files map[string][]byte
+}
+
+func (f *fileAPI) Screen(ctx context.Context, req api.ScreenRequest) (api.ScreenResponse, error) {
+	resp, err := f.fakeAPI.Screen(ctx, req)
+	resp.Download, f.send = f.send, nil
+	return resp, err
+}
+
+func (f *fileAPI) Download(_ context.Context, path string) ([]byte, error) {
+	b, ok := f.files[path]
+	if !ok {
+		return nil, errors.New("api: not found")
+	}
+	return b, nil
+}
+
+func TestSavesFilesTheHostSends(t *testing.T) {
+	dir := t.TempDir()
+	f := &fileAPI{files: map[string][]byte{"/v1/invoices/INV00001/pdf": []byte("%PDF-1.4")}}
+	s := NewSession(&Config{SystemName: "TEST", Backend: f, DownloadDir: dir}, "TERM0001")
+	scr := s.Submit(t3.AIDEnter, s.Start())
+
+	for i, want := range []string{"INV00001.pdf", "INV00001-2.pdf"} {
+		f.send = &api.Download{URL: "/v1/invoices/INV00001/pdf", Name: "../INV00001.pdf"}
+		scr = s.Submit(t3.AIDPF2, scr)
+		path := filepath.Join(dir, want)
+		if b, err := os.ReadFile(path); err != nil || string(b) != "%PDF-1.4" {
+			t.Fatalf("copy %d: %q, %v", i+1, b, err)
+		}
+		if !strings.Contains(scr.Row(23), "GSC1507I SAVED "+path) {
+			t.Fatalf("message: %q", scr.Row(23))
+		}
+	}
+
+	f.send = &api.Download{URL: "/v1/nosuch", Name: "X.pdf"}
+	scr = s.Submit(t3.AIDEnter, scr)
+	if !strings.Contains(scr.Row(23), "GSC1509E NOT FOUND") {
+		t.Fatalf("failed download: %q", scr.Row(23))
+	}
+	f.send = &api.Download{URL: "https://evil.example/x", Name: "X.pdf"}
+	scr = s.Submit(t3.AIDEnter, scr)
+	if !strings.Contains(scr.Row(23), "GSC1509E BAD FILE LOCATION") {
+		t.Fatalf("foreign URL: %q", scr.Row(23))
+	}
+}
+
+// snapAPI is a backend that draws snapshots.
+type snapAPI struct {
+	fakeAPI
+	got api.SnapshotRequest
+}
+
+func (f *snapAPI) Snapshot(_ context.Context, req api.SnapshotRequest) ([]byte, string, error) {
+	f.got = req
+	return []byte("PNG"), req.Map + "-202610260112." + req.Format, nil
+}
+
+func TestSnapshotSendsTheScreenAsItShows(t *testing.T) {
+	dir := t.TempDir()
+	f := &snapAPI{}
+	s := NewSession(&Config{SystemName: "TEST", Backend: f, DownloadDir: dir, Snapshots: true}, "TERM0001")
+	if _, err := s.Snapshot(s.Start(), "png"); err == nil {
+		t.Fatal("snapshot before logon")
+	}
+	scr := s.Submit(t3.AIDEnter, s.Start())
+	fill(t, scr, "opt", "1.2", "pw", "1234")
+
+	path, err := s.Snapshot(scr, "pdf")
+	if err != nil || path != filepath.Join(dir, "TEST-202610260112.pdf") {
+		t.Fatalf("snapshot: %q, %v", path, err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "PNG" {
+		t.Fatalf("file: %q", b)
+	}
+	req := f.got
+	if req.Format != "pdf" || req.Map != "TEST" || req.Terminal != "TERM0001" || req.Screen.Rows != 24 || req.Screen.Cols != 80 {
+		t.Fatalf("request: %+v", req)
+	}
+	want := []api.SnapField{
+		{Row: 1, Col: 2, Text: "START ", Color: "blue"},
+		{Row: 4, Col: 14, Text: "1.2       ", Input: true, Highlight: "underscore"},
+		{Row: 5, Col: 14, Text: "1234    ", Input: true, Highlight: "underscore", Bright: true, Hidden: true},
+		{Row: 24, Col: 2, Text: "PF3=EXIT", Color: "turquoise"},
+	}
+	got := req.Screen.Fields
+	if len(got) != len(want) {
+		t.Fatalf("fields: %+v", got)
+	}
+	for i := range want {
+		if !strings.HasPrefix(got[i].Text, want[i].Text) || got[i].Row != want[i].Row || got[i].Col != want[i].Col ||
+			got[i].Color != want[i].Color || got[i].Input != want[i].Input || got[i].Hidden != want[i].Hidden {
+			t.Errorf("field %d: %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestPushes(t *testing.T) {
+	s, _, _ := newSession(t)
+	pushed := func() bool {
+		select {
+		case <-s.Pushes():
+			return true
+		default:
+			return false
+		}
+	}
+	s.event("syslog")
+	if pushed() {
+		t.Fatal("syslog pushed for a screen that is not live")
+	}
+	s.event("message")
+	if !pushed() {
+		t.Fatal("a message did not push")
+	}
+	s.show(&api.Screen{Map: "APPO01", Rows: 24, Cols: 80, Refresh: 5, Live: "syslog"})
+	s.event("syslog")
+	s.event("syslog") // coalesced with the first
+	if !pushed() || pushed() {
+		t.Fatal("want one push for a live screen")
+	}
+
+	// While listening, the refresh timer is only a fallback.
+	s.setListening(true)
+	if got := s.show(&api.Screen{Map: "APPO01", Rows: 24, Cols: 80, Refresh: 5, Live: "syslog"}).Refresh(); got != liveFallback {
+		t.Fatalf("refresh while listening = %v, want %v", got, liveFallback)
+	}
+	if !s.request("REDRAW", nil).Live {
+		t.Fatal("request does not say the client is listening")
+	}
+}
+
 func TestAppNamesItselfOnLogon(t *testing.T) {
 	f := &fakeAPI{err: api.ErrUnavailable}
 	s := NewSession(&Config{SystemName: "POS1", Title: "Point of Sale", Prefix: "POS", Banner: []string{"STORE 42"}, Backend: f}, "TERM0001")
@@ -284,4 +424,35 @@ func rows(scr *t3.Screen) []string {
 		out[i] = scr.Row(i + 1)
 	}
 	return out
+}
+
+// listenAPI counts the times the session connects to GET /v1/live.
+type listenAPI struct {
+	fakeAPI
+	calls chan struct{}
+}
+
+func (l *listenAPI) Listen(ctx context.Context, opened func(), on func(string)) error {
+	l.calls <- struct{}{}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestListensOnlyWhenTheAppServesLive(t *testing.T) {
+	for _, live := range []bool{false, true} {
+		l := &listenAPI{calls: make(chan struct{}, 1)}
+		s := NewSession(&Config{SystemName: "TEST", Backend: l, Live: live}, "TERM0001")
+		s.show(&api.Screen{Map: "APP001", Rows: 24, Cols: 80})
+		select {
+		case <-l.calls:
+			if !live {
+				t.Error("listened to an app that does not serve /v1/live")
+			}
+		case <-time.After(100 * time.Millisecond):
+			if live {
+				t.Error("did not listen to an app that serves /v1/live")
+			}
+		}
+		s.stopListening()
+	}
 }

@@ -350,3 +350,39 @@ func TestIdleTimeoutLogsOff(t *testing.T) {
 		t.Fatalf("Esc Up did not send PF24:\n%s", term.View())
 	}
 }
+
+// snapHost takes snapshots, recording the format and what the screen held.
+type snapHost struct {
+	echoHost
+	got *[]string
+}
+
+func (h snapHost) Snapshot(s *Screen, format string) (string, error) {
+	*h.got = append(*h.got, format+" "+s.Fields()["name"])
+	return "/tmp/x." + format, nil
+}
+
+func TestSnapshotKeys(t *testing.T) {
+	var got []string
+	term := New(snapHost{got: &got}, Options{})
+	update(term, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ab")})
+	_, cmd := term.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if term.print != "SNAP..." || term.lock != LockNone || cmd == nil {
+		t.Fatalf("after Ctrl+S: %q %v", term.print, term.lock)
+	}
+	update(term, cmd())
+	if term.print != "SNAPPED" {
+		t.Fatalf("after the snapshot: %q", term.print)
+	}
+	update(term, tea.KeyMsg{Type: tea.KeyEsc})
+	_, cmd = term.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	update(term, cmd())
+	if strings.Join(got, ",") != "png AB,pdf AB" {
+		t.Fatalf("snapshots: %q", got)
+	}
+
+	plain := New(echoHost{}, Options{})
+	if _, cmd := plain.Update(tea.KeyMsg{Type: tea.KeyCtrlS}); cmd != nil || plain.print != "SNAP ERR" {
+		t.Fatalf("host without snapshots: %q", plain.print)
+	}
+}

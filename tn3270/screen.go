@@ -297,6 +297,39 @@ func (s *Screen) fieldText(fa int) string {
 	return strings.TrimRight(b.String(), " ")
 }
 
+// Area is one field of the presentation space as it shows: where its data
+// starts, what is in it (nulls as blanks) and how it looks.
+type Area struct {
+	Row, Col int
+	Text     string
+	Attr     Attr
+}
+
+// Areas lists the screen's fields for a snapshot: every input field, and
+// the protected ones that show something.
+func (s *Screen) Areas() []Area {
+	var out []Area
+	for fa, c := range s.buf {
+		if !c.isAttr {
+			continue
+		}
+		start, n := s.fieldBounds(fa)
+		text := make([]rune, n)
+		for i := range text {
+			text[i] = s.buf[s.wrap(start+i)].ch
+			if text[i] == 0 {
+				text[i] = ' '
+			}
+		}
+		if n == 0 || c.attr.Protected && strings.TrimSpace(string(text)) == "" {
+			continue
+		}
+		row, col := s.RowCol(start)
+		out = append(out, Area{Row: row, Col: col, Text: string(text), Attr: c.attr})
+	}
+	return out
+}
+
 // FieldName returns the name of the field under addr, if it is a named
 // input field.
 func (s *Screen) FieldName(addr int) string {

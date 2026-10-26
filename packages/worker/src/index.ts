@@ -1,7 +1,7 @@
 // @greenscreen-dev/worker: serve 3270-style screens from a Cloudflare Worker.
 // See docs/protocol.md for the wire format and README.md for a tour.
 
-export { createApp, signedOn, uid, user, USER_HEADER, type AppConfig, type AppEnv } from "./app.js";
+export { createApp, signedOn, uid, user, SNAPSHOTS_PER_MINUTE, USER_HEADER, type AppConfig, type AppEnv } from "./app.js";
 export {
 	accessAuth, serviceTokenAuth, tokenHash, userIdFor, ASSERTION_HEADER, CLIENT_ID_HEADER, CLIENT_SECRET_HEADER,
 	type AccessEnv, type Auth, type Claims, type Identity,

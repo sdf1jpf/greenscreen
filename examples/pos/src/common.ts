@@ -9,6 +9,7 @@ export interface Env extends AccessEnv {
 	DB: D1Database;
 	SESSIONS?: DurableObjectNamespace<Sessions>; // who is signed on, price locks, SEND (worker.ts)
 	BROWSER?: BrowserRun; // Browser Rendering, for screen snapshots
+	SNAPSHOT_LIMIT?: RateLimit; // snapshots per cashier per minute
 	STATE_KEY?: string; // signs the commarea, so a sale's lines and prices can be trusted; required but under wrangler dev
 	MANAGERS?: string; // who may change prices: emails (or DEV_USER), comma separated
 	STORE?: Store; // tests put a MemoryStore here

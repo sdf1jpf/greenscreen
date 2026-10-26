@@ -104,6 +104,11 @@ async function snapshot(format) {
 			redirect: "manual",
 			body: JSON.stringify(body),
 		});
+		if (res.status === 429) {
+			state.message = "TOO MANY SNAPSHOTS - WAIT A MINUTE";
+			render();
+			return;
+		}
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? `SNAPSHOT.${format}`;
 		download(await res.blob(), name);

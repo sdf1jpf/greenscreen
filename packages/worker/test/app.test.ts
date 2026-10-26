@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	accessAuth, createApp, header, userIdFor, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, serviceTokenAuth, tokenHash, values,
+	accessAuth, createApp, header, userIdFor, SNAPSHOTS_PER_MINUTE, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, serviceTokenAuth, tokenHash, values,
 	USER_HEADER, type AccessEnv, type AppConfig, type PanelState, type ScreenJSON,
 } from "../src";
 
@@ -296,6 +296,24 @@ describe("app routes", () => {
 		expect(drawn).toEqual(["screenshot"]);
 		const bad = await a.request("/v1/snapshot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ format: "gif", screen: {} }) }, devEnv);
 		expect(bad.status).toBe(400);
+	});
+
+	it("limits each user's snapshots", async () => {
+		const shot = (a: ReturnType<typeof createApp<Env>>, env: Env) => a.request("/v1/snapshot", {
+			method: "POST", headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ format: "png", screen: { rows: 24, cols: 80, fields: [] } }),
+		}, env);
+		const browser = () => ({ quickAction: async () => new Response("PNG") }) as unknown as BrowserRun;
+		const a = createApp<Env>({ app: { title: "T", prefix: "TST", system: "S" }, programs: { menu }, snapshot: { browser } });
+		for (let i = 0; i < SNAPSHOTS_PER_MINUTE; i++) expect((await shot(a, devEnv)).status).toBe(200);
+		expect((await shot(a, devEnv)).status).toBe(429);
+		expect((await shot(a, { ...devEnv, DEV_USER: "other" })).status).toBe(200);
+
+		const keys: string[] = [];
+		const limit = () => ({ limit: async ({ key }: { key: string }) => (keys.push(key), { success: false }) });
+		const b = createApp<Env>({ app: { title: "T", prefix: "TST", system: "S" }, programs: { menu }, snapshot: { browser, limit } });
+		expect((await shot(b, devEnv)).status).toBe(429);
+		expect(keys).toEqual(["TESTER"]);
 	});
 
 	it("leaves live and snapshots out when the app has neither", async () => {

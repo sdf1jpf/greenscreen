@@ -20,9 +20,14 @@ export interface AppConfig<E extends object> extends ScreenConfig<E> {
 	// Returning undefined answers 503.
 	live?: (env: E) => { fetch(req: Request): Promise<Response> } | undefined;
 	// snapshot serves POST /v1/snapshot, a screen drawn as a PNG or PDF by
-	// Browser Rendering: browser returns the Browser Run binding.
-	snapshot?: { browser: (env: E) => BrowserRun | undefined };
+	// Browser Rendering: browser returns the Browser Run binding. Each one
+	// costs browser time, so a user gets SNAPSHOTS_PER_MINUTE of them: limit
+	// returns a rate limiting binding to count them across the Worker's
+	// isolates instead, keyed by userid.
+	snapshot?: { browser: (env: E) => BrowserRun | undefined; limit?: (env: E) => RateLimit | undefined };
 }
+
+export const SNAPSHOTS_PER_MINUTE = 10;
 
 // USER_HEADER carries the signed-on userid to the live server.
 export const USER_HEADER = "X-Greenscreen-User";
@@ -89,7 +94,20 @@ export function createApp<E extends object = AccessEnv>(config: AppConfig<E>): H
 
 	const snapshot = config.snapshot;
 	if (snapshot) {
+		const counts = new Map<string, { since: number; n: number }>(); // in this isolate, without a limit binding
+		const allowed = async (env: E, who: string): Promise<boolean> => {
+			const binding = snapshot.limit?.(env);
+			if (binding) return (await binding.limit({ key: who })).success;
+			const now = Date.now();
+			for (const [k, v] of counts) if (now - v.since > 60_000) counts.delete(k);
+			const n = counts.get(who) ?? { since: now, n: 0 };
+			counts.set(who, n);
+			return ++n.n <= SNAPSHOTS_PER_MINUTE;
+		};
 		app.post("/v1/snapshot", guard, async (c) => {
+			if (!(await allowed(c.env as E, user(c)))) {
+				throw new HttpError(429, "too_many_requests", "too many snapshots: wait a minute");
+			}
 			const body = await readJSON(c.req.raw, ["format", "screen", "terminal", "map"]);
 			const f = format(body.format);
 			const scr = snapScreen(body.screen);

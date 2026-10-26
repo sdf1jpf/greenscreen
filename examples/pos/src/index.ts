@@ -41,7 +41,7 @@ const app = createApp<Env>({
 	sessions: tso,
 	live: tso,
 	commands: sendCommand<Env>({ mailbox: (ctx) => tso(ctx.env)! }),
-	snapshot: { browser: (env) => env.BROWSER },
+	snapshot: { browser: (env) => env.BROWSER, limit: (env) => env.SNAPSHOT_LIMIT },
 	fieldHelp: helpTable<Env>({
 		"menu.option": { title: "OPTION", lines: ["The menu option to go to."], values: (_ctx, s) => menu.values(s) },
 		"sale.sku": {

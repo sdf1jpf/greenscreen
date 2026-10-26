@@ -166,6 +166,8 @@ input. Hidden fields are drawn blank. The reply is the file, with a
 `Content-Disposition` naming it after `map` and the time, such as
 `POSM00-202610261112.png`. An app that serves snapshots says so in its
 [app info](#app-info) (`snapshot: true`); clients hide the key otherwise.
+Each snapshot spends browser time, so a user gets about 10 a minute; past
+that the reply is a 429 with the code `too_many_requests`.
 
 ### Live screens
 

@@ -10,6 +10,7 @@ export type ErrorCode =
 	| "bad_request"
 	| "method_not_allowed"
 	| "unavailable"
+	| "too_many_requests"
 	| "internal";
 
 export class HttpError extends Error {

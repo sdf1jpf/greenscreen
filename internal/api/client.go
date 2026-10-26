@@ -92,6 +92,11 @@ func (c *Client) Info(ctx context.Context) (AppInfo, error) {
 	if err != nil {
 		return info, err
 	}
+	// Signed on, send the Access headers too, for an app whose Access
+	// policy does not let the info through without them.
+	for k, v := range c.headers() {
+		req.Header[k] = v
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return info, fmt.Errorf("%w: %v", ErrUnavailable, err)

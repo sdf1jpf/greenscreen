@@ -38,14 +38,11 @@ func main() {
 	client := api.NewClient(*apiURL, access(*apiURL))
 	cfg := &host.Config{SystemName: *sysName, Backend: client, DownloadDir: *prints}
 	// The application names itself. If it can't be reached yet, the logon
-	// screen says so when Enter is pressed.
+	// screen says so when Enter is pressed; if Access keeps it from us until
+	// then, the host asks again after logon.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	if info, err := client.Info(ctx); err == nil {
-		cfg.Title, cfg.Prefix, cfg.Banner, cfg.Tagline = info.Title, info.Prefix, info.Banner, info.Tagline
-		cfg.Live, cfg.Snapshots = info.Live, info.Snapshot
-		if cfg.SystemName == "" {
-			cfg.SystemName = info.System
-		}
+		cfg.SetInfo(info)
 	}
 	cancel()
 	if cfg.SystemName == "" {

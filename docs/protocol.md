@@ -266,8 +266,10 @@ The clients keep a few things to themselves:
 
 An app can keep TSO-style sessions (`sessions` in `createApp`, usually the
 Sessions Durable Object from `@greenscreen-dev/worker/sessions`). The
-commarea then carries a session id (TSU00042) given out at `START`, and a
-session ends after 30 minutes without a request, as the idle limit does.
+commarea then carries a session id (TSU and 20 random hex digits) given out
+at `START`, and a session ends after 30 minutes without a request, as the
+idle limit does. A user has at most 8 sessions: logging on again ends the
+oldest, with its locks.
 
 - **Record locks.** A panel that changes a record names it as a lock, such
   as `PRODUCT 2001`, and holds it for as long as it, or a panel opened over

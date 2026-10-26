@@ -27,12 +27,14 @@ export type { SendResult } from "./send.js";
 // A session that has not been seen for this long has ended (TSO's idle
 // limit, S522); its locks go with it.
 export const IDLE_MS = 30 * 60_000;
+// Sessions per user: logging on again past this ends their oldest.
+export const MAX_SESSIONS = 8;
 // Undelivered messages per user, and how long they wait.
 const MAX_PENDING = 50;
 const KEEP_MESSAGES_MS = 7 * 86_400_000;
 
 export interface TsoSession {
-	sid: string; // TSU00042
+	sid: string; // TSU and 20 random hex digits
 	user: string;
 	terminal: string;
 	logon: string; // RFC 3339
@@ -88,7 +90,7 @@ export class Sessions<E = unknown> extends DurableObject<E> {
 		}
 	}
 
-	// logon starts a session and returns its TSU id.
+	// logon starts a session and returns its id.
 	logon(user: string, terminal: string): string {
 		this.expire();
 		return this.create(user, terminal);
@@ -174,7 +176,10 @@ export class Sessions<E = unknown> extends DurableObject<E> {
 		const out: SendResult = { sent: [], notOn: [] };
 		const now = Date.now();
 		for (const user of targets) {
-			if (!on.has(user) && !logon) {
+			// Kept for logon only for a userid someone has signed on as, so
+			// SEND can't fill the mailbox for made-up ones.
+			const known = on.has(user) || (logon && this.sql.exec("SELECT 1 FROM userids WHERE userid = ?", user).toArray().length > 0);
+			if (!known) {
 				out.notOn.push(user);
 				continue;
 			}
@@ -257,12 +262,16 @@ export class Sessions<E = unknown> extends DurableObject<E> {
 		this.sql.exec("DELETE FROM messages WHERE sent < ?", now - KEEP_MESSAGES_MS);
 	}
 
+	// create starts a session with an id no one can guess or run into,
+	// ending the user's oldest if they have MAX_SESSIONS already.
 	private create(user: string, terminal: string, map = ""): string {
-		const n = this.counter("tsu") % 99_999 + 1;
-		this.setCounter("tsu", n);
-		const sid = `TSU${String(n).padStart(5, "0")}`;
+		const old = this.sql.exec<{ sid: string }>(
+			"SELECT sid FROM sessions WHERE user = ? ORDER BY seen DESC LIMIT -1 OFFSET ?", user, MAX_SESSIONS - 1,
+		).toArray();
+		for (const { sid } of old) this.logoff(sid, user);
+		const sid = "TSU" + crypto.randomUUID().replace(/-/g, "").slice(0, 20).toUpperCase();
 		const now = Date.now();
-		this.sql.exec("INSERT OR REPLACE INTO sessions (sid, user, terminal, logon, seen, map) VALUES (?, ?, ?, ?, ?, ?)",
+		this.sql.exec("INSERT INTO sessions (sid, user, terminal, logon, seen, map) VALUES (?, ?, ?, ?, ?, ?)",
 			sid, user, terminal, new Date(now).toISOString(), now, map);
 		return sid;
 	}

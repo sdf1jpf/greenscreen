@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	createApp, header, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, serviceTokenAuth, tokenHash, values,
-	USER_HEADER, type AccessEnv, type PanelState, type ScreenJSON,
+	accessAuth, createApp, header, userIdFor, SNAPSHOTS_PER_MINUTE, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, serviceTokenAuth, tokenHash, values,
+	USER_HEADER, type AccessEnv, type AppConfig, type PanelState, type ScreenJSON,
 } from "../src";
 
 // A two-panel app: a menu and a counter that keeps its count in the
@@ -48,7 +48,7 @@ const menu = menuProgram<Env>({
 	},
 });
 
-function app() {
+function app(extra: Partial<AppConfig<Env>> = {}) {
 	return createApp<Env>({
 		app: { title: "TEST SYSTEM", prefix: "TST", system: "SYS9", banner: ["WELCOME"] },
 		programs: { menu, count },
@@ -57,6 +57,7 @@ function app() {
 			step: { title: "STEP", lines: ["How much to add."], values: values(["1", "ONE"], ["5", "FIVE"]) },
 		}),
 		stateKey: (env) => env.STATE_KEY,
+		...extra,
 	});
 }
 
@@ -66,7 +67,7 @@ type Reply = { v: 1; state: string; screen: ScreenJSON } & { logoff?: { message:
 
 async function send(body: Record<string, unknown>, env: Env = devEnv): Promise<Reply> {
 	const res = await app().request("/v1/screen", {
-		method: "POST",
+		method: "POST", headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ v: 1, rows: 24, cols: 80, ...body }),
 	}, env);
 	expect(res.status).toBe(200);
@@ -74,6 +75,10 @@ async function send(body: Record<string, unknown>, env: Env = devEnv): Promise<R
 }
 
 const texts = (r: Reply) => r.screen.fields.map((f) => f.text ?? "").join("|");
+
+afterEach(() => {
+	vi.useRealTimers();
+});
 
 describe("screen engine", () => {
 	it("starts at the menu and titles it with the app", async () => {
@@ -113,6 +118,84 @@ describe("screen engine", () => {
 		expect(JSON.parse(r.state).s.p).toBe("menu");
 	});
 
+	it("refuses a commarea issued to another user", async () => {
+		const alice = { DEV_USER: "alice", STATE_KEY: "secret" };
+		const bob = { DEV_USER: "bob", STATE_KEY: "secret" };
+		const start = await send({ aid: "START" }, alice);
+		const c = await send({ aid: "ENTER", state: start.state, fields: { option: "1 5" } }, alice);
+		expect(texts(c)).toContain("COUNT 5");
+		const got = await send({ aid: "ENTER", state: c.state, fields: { step: "1" } }, bob);
+		expect(got.screen.map).toBe("TSTM00");
+		expect(texts(got)).toContain("TST0001W SCREEN STATE LOST");
+		const own = await send({ aid: "ENTER", state: c.state, fields: { step: "1" } }, alice);
+		expect(texts(own)).toContain("COUNT 6");
+	});
+
+	it("binds the commarea to the identity, not the userid", async () => {
+		const auth = async (_env: Env, req: Request) => ({ id: req.headers.get("X-Id") ?? "", userid: "JOHNSMIT" });
+		const a = app({ auth });
+		const post = async (id: string, body: Record<string, unknown>): Promise<Reply> =>
+			(await a.request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json", "X-Id": id }, body: JSON.stringify({ v: 1, ...body }) }, { STATE_KEY: "k" })).json();
+		const start = await post("john.smith@a.com", { aid: "START" });
+		const c = await post("john.smith@a.com", { aid: "ENTER", state: start.state, fields: { option: "1 5" } });
+		expect(texts(c)).toContain("COUNT 5");
+		expect(texts(await post("johnsmith@b.com", { aid: "ENTER", state: c.state }))).toContain("SCREEN STATE LOST");
+	});
+
+	it("asks allow about the panel shown and the one to show", async () => {
+		let counters = ["ALICE"];
+		const a = app({ allow: (ctx, s) => s.p !== "count" || counters.includes(ctx.user) });
+		const post = async (user: string, body: Record<string, unknown>): Promise<Reply> =>
+			(await a.request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, ...body }) }, { DEV_USER: user, STATE_KEY: "k" })).json();
+		const bob = await post("bob", { aid: "START" });
+		const refused = await post("bob", { aid: "ENTER", state: bob.state, fields: { option: "1 5" } });
+		expect(refused.screen.map).toBe("TSTM00");
+		expect(texts(refused)).toContain("TST0002E NOT AUTHORIZED");
+		const alice = await post("alice", { aid: "START" });
+		const c = await post("alice", { aid: "ENTER", state: alice.state, fields: { option: "1 5" } });
+		expect(texts(c)).toContain("COUNT 5");
+		counters = [];
+		const after = await post("alice", { aid: "ENTER", state: c.state, fields: { step: "1" } });
+		expect(after.screen.map).toBe("TSTM00");
+		expect(texts(after)).toContain("TST0002E NOT AUTHORIZED");
+	});
+
+	it("takes input only for the fields drawn, as long as they were drawn", async () => {
+		const start = await send({ aid: "START" });
+		const c = await send({ aid: "ENTER", state: start.state, fields: { option: "1 5" } });
+		const cut = await send({ aid: "ENTER", state: c.state, fields: { step: "12345" } });
+		expect(texts(cut)).toContain("COUNT 1239");
+		const letters = await send({ aid: "ENTER", state: cut.state, fields: { step: "9x" } });
+		expect(texts(letters)).toContain("COUNT 1240");
+		const big = "9".repeat(200_000);
+		const h = await send({ aid: "PF1", state: letters.state, fields: { step: big, other: big }, modified: ["step", "other"] });
+		expect(h.state.length).toBeLessThan(4000);
+	});
+
+	it("refuses a commarea older than its lifetime", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		const start = await send({ aid: "START" });
+		const c = await send({ aid: "ENTER", state: start.state, fields: { option: "1 5" } });
+		vi.setSystemTime(Date.now() + 29 * 60_000);
+		const fresh = await send({ aid: "ENTER", state: c.state, fields: { step: "100" } });
+		expect(texts(fresh)).toContain("COUNT 105");
+		vi.setSystemTime(Date.now() + 2 * 60_000); // c is 31 minutes old; fresh is 2
+		const old = await send({ aid: "ENTER", state: c.state, fields: { step: "1" } });
+		expect(texts(old)).toContain("TST0001W SCREEN STATE LOST");
+		expect(texts(await send({ aid: "ENTER", state: fresh.state, fields: { step: "1" } }))).toContain("COUNT 106");
+	});
+
+	it("refuses to serve without a signing key outside wrangler dev", async () => {
+		const auth = async () => "TESTER";
+		const res = await app({ auth }).request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, aid: "START" }) }, {});
+		expect(res.status).toBe(500);
+		expect(await res.text()).toContain("signing key is not set");
+		const signed = await app({ auth }).request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, aid: "START" }) }, { STATE_KEY: "k" });
+		expect(signed.status).toBe(200);
+		const unsigned = await app({ auth, unsigned: true }).request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, aid: "START" }) }, {});
+		expect(unsigned.status).toBe(200);
+	});
+
 	it("gives field help with values and puts the pick back", async () => {
 		const start = await send({ aid: "START" });
 		const c = await send({ aid: "ENTER", state: start.state, fields: { option: "1" } });
@@ -147,10 +230,22 @@ describe("screen engine", () => {
 		expect(idle.logoff?.message).toContain("S522");
 	});
 
+	it("takes only JSON bodies and names it can show", async () => {
+		const form = await app().request("/v1/screen", {
+			method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: JSON.stringify({ v: 1, aid: "START" }),
+		}, devEnv);
+		expect(form.status).toBe(415);
+		const events: string[] = [];
+		await app({ onEvent: (_ctx, e) => void events.push(e.text) }).request("/v1/screen", {
+			method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, aid: "START", terminal: "<b>evil term</b>" }),
+		}, devEnv);
+		expect(events).toEqual(["IKJ56455I TESTER LOGON IN PROGRESS ON BEVILTER"]);
+	});
+
 	it("rejects an unknown AID", async () => {
 		const start = await send({ aid: "START" });
 		const res = await app().request("/v1/screen", {
-			method: "POST", body: JSON.stringify({ v: 1, aid: "PF99", state: start.state }),
+			method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, aid: "PF99", state: start.state }),
 		}, devEnv);
 		expect(res.status).toBe(400);
 	});
@@ -165,7 +260,7 @@ describe("app routes", () => {
 	});
 
 	it("needs Access when it is configured", async () => {
-		const res = await app().request("/v1/screen", { method: "POST", body: "{}" },
+		const res = await app().request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
 			{ ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.test", ACCESS_AUD: "aud" });
 		expect(res.status).toBe(401);
 	});
@@ -191,7 +286,7 @@ describe("app routes", () => {
 		expect(seen).toEqual(["TESTER"]);
 
 		const snap = await a.request("/v1/snapshot", {
-			method: "POST",
+			method: "POST", headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ format: "png", map: "tstm00", screen: { rows: 24, cols: 80, fields: [{ row: 1, col: 2, text: "HELLO" }] } }),
 		}, devEnv);
 		expect(snap.status).toBe(200);
@@ -199,38 +294,87 @@ describe("app routes", () => {
 		expect(snap.headers.get("Content-Disposition")).toMatch(/filename="TSTM00-\d{12}\.png"/);
 		expect(await snap.text()).toBe("PNG");
 		expect(drawn).toEqual(["screenshot"]);
-		const bad = await a.request("/v1/snapshot", { method: "POST", body: JSON.stringify({ format: "gif", screen: {} }) }, devEnv);
+		const bad = await a.request("/v1/snapshot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ format: "gif", screen: {} }) }, devEnv);
 		expect(bad.status).toBe(400);
+	});
+
+	it("limits each user's snapshots", async () => {
+		const shot = (a: ReturnType<typeof createApp<Env>>, env: Env) => a.request("/v1/snapshot", {
+			method: "POST", headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ format: "png", screen: { rows: 24, cols: 80, fields: [] } }),
+		}, env);
+		const browser = () => ({ quickAction: async () => new Response("PNG") }) as unknown as BrowserRun;
+		const a = createApp<Env>({ app: { title: "T", prefix: "TST", system: "S" }, programs: { menu }, snapshot: { browser } });
+		for (let i = 0; i < SNAPSHOTS_PER_MINUTE; i++) expect((await shot(a, devEnv)).status).toBe(200);
+		expect((await shot(a, devEnv)).status).toBe(429);
+		expect((await shot(a, { ...devEnv, DEV_USER: "other" })).status).toBe(200);
+
+		const keys: string[] = [];
+		const limit = () => ({ limit: async ({ key }: { key: string }) => (keys.push(key), { success: false }) });
+		const b = createApp<Env>({ app: { title: "T", prefix: "TST", system: "S" }, programs: { menu }, snapshot: { browser, limit } });
+		expect((await shot(b, devEnv)).status).toBe(429);
+		expect(keys).toEqual(["TESTER"]);
 	});
 
 	it("leaves live and snapshots out when the app has neither", async () => {
 		expect((await app().request("/v1/live", { headers: { Upgrade: "websocket" } }, devEnv)).status).toBe(404);
-		expect((await app().request("/v1/snapshot", { method: "POST", body: "{}" }, devEnv)).status).toBe(404);
+		expect((await app().request("/v1/snapshot", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, devEnv)).status).toBe(404);
 	});
 
 	it("lets the app add signed-on routes", async () => {
 		const a = app();
-		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user") }));
-		expect(await (await a.request("/v1/whoami", {}, devEnv)).json()).toEqual({ user: "TESTER" });
+		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user"), uid: c.get("uid") }));
+		expect(await (await a.request("/v1/whoami", {}, devEnv)).json()).toEqual({ user: "TESTER", uid: "TESTER" });
 	});
 });
 
 describe("serviceTokenAuth", () => {
-	it("signs on a known service token as its client ID, and nothing else", async () => {
+	it("signs on a known service token as its client ID, as Access does, and nothing else", async () => {
 		const hash = await tokenHash("s3cret");
 		const a = createApp<Env & { TOKENS?: Record<string, string> }>({
 			app: { title: "TEST SYSTEM", prefix: "TST", system: "SYS9" },
 			programs: { menu },
 			auth: serviceTokenAuth((env) => env.TOKENS),
 		});
-		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user") }));
+		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user"), uid: c.get("uid") }));
 		const env = { TOKENS: { "Reg-1.access": hash } };
 		const who = (h: Record<string, string>) => a.request("/v1/whoami", { headers: h }, env);
 		const ok = await who({ "CF-Access-Client-Id": "REG-1.access", "CF-Access-Client-Secret": "s3cret" });
-		expect(await ok.json()).toEqual({ user: "reg-1.access" });
+		expect(await ok.json()).toEqual({ user: "REG1", uid: "reg-1.access" });
 		expect((await who({ "CF-Access-Client-Id": "reg-1.access", "CF-Access-Client-Secret": "wrong" })).status).toBe(401);
 		expect((await who({ "CF-Access-Client-Id": "reg-2.access", "CF-Access-Client-Secret": "s3cret" })).status).toBe(401);
 		expect((await who({})).status).toBe(401);
 		expect((await a.request("/v1/whoami", { headers: { "CF-Access-Client-Id": "reg-1.access", "CF-Access-Client-Secret": "s3cret" } }, {})).status).toBe(401);
 	});
 });
+
+describe("userIdFor", () => {
+	it("makes a TSO-style name, which is not unique", () => {
+		expect(userIdFor({ email: "john.smith@a.com" })).toBe("JOHNSMIT");
+		expect(userIdFor({ email: "johnsmith@b.com" })).toBe("JOHNSMIT");
+		expect(userIdFor({ common_name: "0123abcd9876.access" })).toBe("0123ABCD");
+		expect(userIdFor({})).toBe("SERVICE");
+	});
+});
+
+describe("accessAuth", () => {
+	it("fetches the Access keys for an unknown kid at most once a minute", async () => {
+		const real = globalThis.fetch;
+		let fetched = 0;
+		globalThis.fetch = (async () => (fetched++, Response.json({ keys: [] }))) as typeof fetch;
+		try {
+			const a = app({ auth: accessAuth() });
+			const b64 = (o: object) => btoa(JSON.stringify(o)).replace(/=+$/, "");
+			const env = { ACCESS_TEAM_DOMAIN: "throttle.cloudflareaccess.com", ACCESS_AUD: "aud", STATE_KEY: "k" };
+			for (let i = 0; i < 5; i++) {
+				const jwt = `${b64({ alg: "RS256", kid: `made-up-${i}` })}.${b64({})}.c2ln`;
+				const res = await a.request("/v1/session", { method: "POST", headers: { "Cf-Access-Jwt-Assertion": jwt } }, env);
+				expect(res.status).toBe(401);
+			}
+			expect(fetched).toBe(1);
+		} finally {
+			globalThis.fetch = real;
+		}
+	});
+});
+

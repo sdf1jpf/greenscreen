@@ -9,11 +9,19 @@ export interface Env extends AccessEnv {
 	DB: D1Database;
 	SESSIONS?: DurableObjectNamespace<Sessions>; // who is signed on, price locks, SEND (worker.ts)
 	BROWSER?: BrowserRun; // Browser Rendering, for screen snapshots
-	STATE_KEY?: string; // signs the commarea, so a sale's lines and prices can be trusted
+	SNAPSHOT_LIMIT?: RateLimit; // snapshots per cashier per minute
+	STATE_KEY?: string; // signs the commarea, so a sale's lines and prices can be trusted; required but under wrangler dev
+	MANAGERS?: string; // who may change prices: emails (or DEV_USER), comma separated
 	STORE?: Store; // tests put a MemoryStore here
 }
 
 export type PosCtx = Ctx<Env>;
+
+// manager says whether the signed-on user may change prices.
+export function manager(ctx: PosCtx): boolean {
+	const ids = (ctx.env.MANAGERS ?? "").split(",").map((m) => m.trim().toLowerCase()).filter(Boolean);
+	return ids.includes(ctx.uid.toLowerCase());
+}
 
 export function store(ctx: PosCtx): Store {
 	return ctx.env.STORE ?? new D1Store(ctx.env.DB);

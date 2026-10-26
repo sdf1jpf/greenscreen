@@ -18,7 +18,8 @@ through Cloudflare Access by default.
 
 ## Request
 
-`POST /v1/screen`, signed on like every endpoint but health and info.
+`POST /v1/screen`, signed on like every endpoint but health and info, with
+`Content-Type: application/json` (any other type gets a 415).
 
 ```json
 {
@@ -45,7 +46,7 @@ through Cloudflare Access by default.
 | `modified` | Names of the input fields whose modified data tag is set (the operator typed in them). |
 | `cursor` | 1-based row and column of the cursor, and the name of the input field it is in, or `""`. Field-level help (PF1 on a field) uses `field`. |
 | `rows`, `cols` | Size of the presentation space. The Worker lays the screen out for it, no smaller than 24x80. |
-| `terminal`, `system` | The terminal (LU) name and system name to show on screens. Optional. |
+| `terminal`, `system` | The terminal (LU) name and system name to show on screens, up to eight letters, digits, `#`, `@` or `$` (others are dropped). Optional. They are labels: the server does not trust them to say who or where the client is. |
 | `tz_offset` | The client's offset from UTC in minutes (east positive), so times show in local time. Optional, default 0. |
 | `live` | `true` while the client is connected to `GET /v1/live` (see Live screens). Optional. |
 
@@ -165,6 +166,8 @@ input. Hidden fields are drawn blank. The reply is the file, with a
 `Content-Disposition` naming it after `map` and the time, such as
 `POSM00-202610261112.png`. An app that serves snapshots says so in its
 [app info](#app-info) (`snapshot: true`); clients hide the key otherwise.
+Each snapshot spends browser time, so a user gets about 10 a minute; past
+that the reply is a 429 with the code `too_many_requests`.
 
 ### Live screens
 
@@ -213,11 +216,20 @@ optional. A client that gets a 404 here falls back to its own defaults.
 ## Commarea
 
 `state` is opaque to clients. A server may sign it (`@greenscreen-dev/worker`
-does when given a `stateKey`: base64url JSON, a dot, an HMAC-SHA256), and
+does with its `stateKey`: base64url JSON, a dot, an HMAC-SHA256), and
 then a state that was changed on the way is treated like a lost one: the
-reply is the first screen with a `xxx0001W` warning. Unsigned states are
-plain JSON, and panels must not trust them for anything the operator
-could not do anyway.
+reply is the first screen with a `xxx0001W` warning. The same goes for a
+state sent back by a different user than the one it was issued to, and for
+one older than the server's lifetime for it (30 minutes by default, the idle
+limit), since each reply carries a fresh one. The commarea also lists the
+input fields of its screen, and the server ignores input for any other
+field, cuts values to the field's length, and drops a numeric field's value
+if it holds more than digits, `.` and `-`.
+
+`@greenscreen-dev/worker` refuses to serve screens without a `stateKey`,
+except under `wrangler dev` with `DEV_USER` or when the app sets
+`unsigned: true`. Unsigned states are plain JSON, and panels must not trust
+them for anything the operator could not do anyway.
 
 ## Versions
 
@@ -260,8 +272,10 @@ The clients keep a few things to themselves:
 
 An app can keep TSO-style sessions (`sessions` in `createApp`, usually the
 Sessions Durable Object from `@greenscreen-dev/worker/sessions`). The
-commarea then carries a session id (TSU00042) given out at `START`, and a
-session ends after 30 minutes without a request, as the idle limit does.
+commarea then carries a session id (TSU and 20 random hex digits) given out
+at `START`, and a session ends after 30 minutes without a request, as the
+idle limit does. A user has at most 8 sessions: logging on again ends the
+oldest, with its locks.
 
 - **Record locks.** A panel that changes a record names it as a lock, such
   as `PRODUCT 2001`, and holds it for as long as it, or a panel opened over

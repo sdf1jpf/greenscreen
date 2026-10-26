@@ -10,12 +10,12 @@ const catalog = [
 
 type Reply = { state: string; screen: { map: string; fields: { text?: string; name?: string; value?: string }[] } };
 
-function terminal() {
-	const env = { DEV_USER: "cashier1", STATE_KEY: "test-key", STORE: new MemoryStore(catalog) } as unknown as Env;
+function terminal(user = "cashier1") {
+	const env = { DEV_USER: user, MANAGERS: "boss@example.com, cashier1", STATE_KEY: "test-key", STORE: new MemoryStore(catalog) } as unknown as Env;
 	let state = "";
 	async function key(aid: string, fields: Record<string, string> = {}, cursor = ""): Promise<Reply> {
 		const res = await app.request("/v1/screen", {
-			method: "POST",
+			method: "POST", headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ v: 1, aid, state, fields, modified: Object.keys(fields), cursor: { row: 1, col: 1, field: cursor }, rows: 24, cols: 80 }),
 		}, env);
 		expect(res.status).toBe(200);
@@ -125,5 +125,14 @@ describe("point of sale", () => {
 		expect(r.screen.map).toBe("POS050");
 		expect(text(r)).toContain("POS0510I 2001 NOW 2.25");
 		expect(text(r)).toContain("2.25");
+	});
+
+	it("lets only managers change prices", async () => {
+		const t = terminal("cashier2");
+		await t.key("START");
+		let r = await t.key("ENTER", { option: "PRICES" });
+		r = await t.key("ENTER", { "sel:2001": "C" });
+		expect(r.screen.map).toBe("POS050");
+		expect(text(r)).toContain("POS0002E NOT AUTHORIZED");
 	});
 });

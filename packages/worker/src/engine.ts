@@ -3,6 +3,7 @@
 // its input fields and the commarea from the last reply; the engine runs
 // the panel the commarea names and answers with the next screen.
 
+import type { Identity } from "./auth.js";
 import { open, seal } from "./commarea.js";
 import type { FieldHelpLookup } from "./fieldhelp.js";
 import { helpProgram } from "./help.js";
@@ -11,7 +12,7 @@ import {
 	isLogoff, takeDownload, takeFill, withFill,
 	type Download, type HelpState, type Input, type Next, type PanelState, type Program,
 } from "./program.js";
-import { breakIn, MAX_COLS, MAX_ROWS, MIN_COLS, MIN_ROWS, msgId, time, type AppInfo, type Ctx, type ScreenJSON } from "./screen.js";
+import { breakIn, MAX_COLS, MAX_ROWS, MIN_COLS, MIN_ROWS, msgId, time, type AppInfo, type Ctx, type Screen, type ScreenJSON } from "./screen.js";
 
 export const requestKeys = [
 	"v", "aid", "state", "fields", "modified", "cursor", "rows", "cols", "terminal", "system", "tz_offset", "live",
@@ -47,6 +48,11 @@ export interface SessionStore {
 	// want. conflict is another session holding one of them, and then
 	// nothing changed. message is one waiting for the user, now delivered.
 	sync(sid: string, user: string, terminal: string, map: string, want: string[]): SyncResult | Promise<SyncResult>;
+	// userid gives the identity id the userid it signs on as: the one it
+	// had before, or want if no other identity has it, or want with a
+	// number in it (JOHNSMI2). Everything else here is keyed on the userid,
+	// so two people must never share one.
+	userid?(id: string, want: string): string | Promise<string>;
 }
 
 export interface HoldResult { sid: string; lost?: Holder | null }
@@ -59,10 +65,27 @@ export interface ScreenConfig<E = unknown> {
 	// The record is checked at run time, so any Program fits.
 	programs: Record<string, Program<any, E>>;
 	start?: (ctx: Ctx<E>) => Next | Promise<Next>; // the first screen after logon
+	// allow says whether ctx.user may use the panel in state s. Menus decide
+	// what is offered; this decides what is allowed, whatever commarea comes
+	// back. It is asked about the panel a key was pressed on before it
+	// handles the key, and about the next panel before it is drawn. A panel
+	// refused stays on, or goes back to, the screen before with an xxx0002E
+	// message.
+	allow?: (ctx: Ctx<E>, s: PanelState) => boolean | Promise<boolean>;
 	fieldHelp?: FieldHelpLookup<E>; // help for the field the cursor is in on PF1
 	commandLines?: Record<string, string>; // panel -> the name of its command line field, for PF24 RETRIEVE
-	stateKey?: (env: E) => string | undefined; // the secret that signs the commarea; unset sends it unsigned
+	// stateKey returns the secret that signs the commarea. Without one the
+	// engine refuses to serve screens, unless unsigned is set or the
+	// request was signed on as DEV_USER (wrangler dev): an unsigned
+	// commarea can be rewritten by the client, totals and all.
+	stateKey?: (env: E) => string | undefined;
+	unsigned?: boolean; // serve an unsigned commarea, for an app whose panels trust nothing in it
 	stateVersion?: number; // bump when a state shape changes so old states can't be read
+	// stateLifetime is how long, in seconds, a commarea can be sent back
+	// before it is treated as lost: by default 30 minutes, the idle limit.
+	// Each reply carries a new one, so it only ends a conversation left that
+	// long. 0 lets them last for ever.
+	stateLifetime?: number;
 	onEvent?: (ctx: Ctx<E>, event: SessionEvent) => void | Promise<void>; // logon, logoff, idle timeout
 	// context adds the app's own things to every panel's ctx, such as its
 	// database: context: (ctx) => ({ db: ctx.env.DB }). A panel declares
@@ -81,6 +104,9 @@ export interface ScreenConfig<E = unknown> {
 }
 
 const HISTORY = 20;
+const COMMAND_MAX = 255; // the longest command kept for PF24
+const LIFETIME_S = 30 * 60;
+const CLOCK_SKEW_S = 60;
 
 const aids = new Set([
 	"ENTER", "CLEAR", "PA1", "PA2", "PA3",
@@ -99,7 +125,20 @@ interface Session {
 	retrieved?: number; // the history entry PF24 last put back
 }
 
-export type ScreenHandler<E> = (env: E, user: string, url: URL, body: Record<string, unknown>) => Promise<ScreenResponse>;
+// Fields is the input fields of the screen a commarea goes with, by name:
+// their length, negative for numeric ones. Input is checked against it, so
+// a panel only ever sees the fields it drew, no longer than it drew them.
+type Fields = Record<string, number>;
+
+function fieldsOf(scr: Screen): Fields {
+	const out: Fields = {};
+	for (const f of scr.fields) if (f.name) out[f.name] = f.numeric ? -(f.length ?? 0) : (f.length ?? 0);
+	return out;
+}
+
+// who is the signed-on identity, with the userid the app's SessionStore
+// gave it.
+export type ScreenHandler<E> = (env: E, who: Identity, url: URL, body: Record<string, unknown>) => Promise<ScreenResponse>;
 
 export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 	const programs: Record<string, Program<PanelState, E>> = {
@@ -109,7 +148,12 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 	if (!programs.menu && !config.start) throw new Error('register a "menu" program or give a start screen');
 	const commandLines = config.commandLines ?? (programs.menu ? { menu: "option" } : {});
 	const stateVersion = config.stateVersion ?? 1;
+	const lifetime = config.stateLifetime ?? LIFETIME_S;
 	const event = async (ctx: Ctx<E>, e: SessionEvent) => config.onEvent?.(ctx, e);
+
+	const allowed = async (ctx: Ctx<E>, s: PanelState) => !config.allow || (await config.allow(ctx, s));
+	const refused = (ctx: Ctx<E>) => `${msgId(ctx, "0002E")} NOT AUTHORIZED - ASK YOUR ADMINISTRATOR`;
+	const home = async (ctx: Ctx<E>): Promise<Next> => (config.start ? await config.start(ctx) : { p: "menu" });
 
 	const program = (p: string) => {
 		const prog = programs[p];
@@ -124,8 +168,10 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 		return st.back === undefined || valid(st.back, depth + 1);
 	}
 
-	async function encode(s: PanelState, session: Session, key?: string): Promise<string> {
-		const out: Record<string, unknown> = { sv: stateVersion, s };
+	// The commarea names the identity it was issued to and when, so it
+	// can't be sent back by anyone else or, after its lifetime, by anyone.
+	async function encode(s: PanelState, session: Session, fields: Fields, user: string, key?: string): Promise<string> {
+		const out: Record<string, unknown> = { sv: stateVersion, u: user, i: Math.floor(Date.now() / 1000), f: fields, s };
 		if (session.sid) out.t = session.sid;
 		if (session.history.length > 0) out.h = session.history;
 		if (session.retrieved !== undefined) out.r = session.retrieved;
@@ -133,16 +179,20 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 	}
 
 	// decode reads a commarea, or returns undefined if it is missing,
-	// damaged, tampered with or from an incompatible release.
-	async function decode(raw: string, key?: string): Promise<{ s: PanelState; session: Session } | undefined> {
+	// damaged, tampered with, from an incompatible release, issued to
+	// another user or too old.
+	async function decode(raw: string, user: string, key?: string): Promise<{ s: PanelState; session: Session; fields: Fields } | undefined> {
 		try {
 			const payload = await open(raw, key);
 			if (payload === undefined) return undefined;
-			const { sv, s, h, r, t } = JSON.parse(payload);
-			if (sv !== stateVersion || !valid(s)) return undefined;
+			const { sv, u, i, f, s, h, r, t } = JSON.parse(payload);
+			if (sv !== stateVersion || u !== user || !valid(s)) return undefined;
+			const now = Date.now() / 1000;
+			if (typeof i !== "number" || i > now + CLOCK_SKEW_S || (lifetime > 0 && i < now - lifetime)) return undefined;
 			const history = Array.isArray(h) ? h.filter((c): c is string => typeof c === "string").slice(0, HISTORY) : [];
 			const retrieved = Number.isInteger(r) && r >= 0 && r < history.length ? (r as number) : undefined;
-			return { s, session: { history, retrieved, sid: typeof t === "string" ? t : undefined } };
+			const fields: Fields = typeof f === "object" && f !== null ? f : {};
+			return { s, fields, session: { history, retrieved, sid: typeof t === "string" ? t : undefined } };
 		} catch {
 			return undefined;
 		}
@@ -165,17 +215,19 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 		return s;
 	};
 
-	return async (env, user, url, body) => {
+	return async (env, who, url, body) => {
 		if (body.v !== 1) throw bad('"v" must be 1');
+		const user = who.userid;
 		const aid = str(body, "aid");
 		const ctx: Ctx<E> = {
 			env,
 			app: config.app,
 			user,
+			uid: who.id,
 			rows: clamp(int(body, "rows"), MIN_ROWS, MAX_ROWS),
 			cols: clamp(int(body, "cols"), MIN_COLS, MAX_COLS),
-			system: str(body, "system") || config.app.system,
-			terminal: str(body, "terminal") || "TERM0001",
+			system: label(str(body, "system")) || config.app.system,
+			terminal: label(str(body, "terminal")) || "TERM0001",
 			host: url.host,
 			tzOffset: clamp(int(body, "tz_offset"), -14 * 60, 14 * 60),
 			sid: "",
@@ -184,12 +236,15 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 		const extra = config.context?.(ctx);
 		if (extra) Object.assign(ctx, extra);
 		const key = config.stateKey?.(env);
+		if (!key && !config.unsigned && !devUser(env)) {
+			throw new HttpError(500, "internal", "the commarea signing key is not set (stateKey, usually the STATE_KEY secret)");
+		}
 		const store = config.sessions?.(env);
 
 		let next: Next;
 		let session: Session = { history: [] };
 		let before: PanelState | undefined; // the screen as it was, to go back to if a lock is refused
-		const got = aid === "START" ? undefined : await decode(str(body, "state"), key);
+		const got = aid === "START" ? undefined : await decode(str(body, "state"), who.id, key);
 		if (got) session = got.session;
 		ctx.sid = session.sid ?? "";
 		if (aid === "START") {
@@ -208,9 +263,13 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 			const hold = store && held.length > 0 && aid !== "REDRAW" ? await store.hold(ctx.sid, user, ctx.terminal, held) : undefined;
 			if (hold) ctx.sid = hold.sid;
 			if (!current) {
-				const lost = `${msgId(ctx, "0001W")} SCREEN STATE LOST OR FROM AN OLDER RELEASE - START OVER`;
+				const lost = `${msgId(ctx, "0001W")} SCREEN STATE LOST, EXPIRED OR FROM AN OLDER RELEASE - START OVER`;
 				next = config.start ? await config.start(ctx) : { p: "menu" };
 				if (!isLogoff(next)) next.msg = lost;
+			} else if (!(await allowed(ctx, current))) {
+				next = await home(ctx);
+				before = undefined;
+				if (!isLogoff(next)) next.msg = refused(ctx);
 			} else if (aid === "REDRAW") {
 				next = current;
 			} else if (!aids.has(aid)) {
@@ -226,18 +285,19 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 				// PF1 is help on every screen: for the field the cursor is in if
 				// it has any, otherwise the tutorial. What the operator typed is
 				// kept for when they come back.
-				const inp = input(body, aid);
+				const inp = input(body, aid, got.fields);
 				const vals = Object.fromEntries([...inp.modified].filter((n) => n in inp.fields).map((n) => [n, inp.fields[n]]));
 				const h: HelpState = { p: "help", back: current, ...(Object.keys(vals).length ? { vals } : {}) };
 				next = (await config.fieldHelp?.(current, inp.cursorField, ctx)) ? { ...h, field: inp.cursorField } : h;
 			} else if (aid === "PF24" && cmdField) {
 				next = retrieve(ctx, current, cmdField, session);
 			} else {
-				const inp = input(body, aid);
+				const inp = input(body, aid, got.fields);
 				session.retrieved = undefined;
 				const cmd = (inp.fields[cmdField ?? ""] ?? "").trim();
 				if (aid === "ENTER" && cmdField && cmd) {
-					session.history = [cmd, ...session.history.filter((c) => c !== cmd)].slice(0, HISTORY);
+					const kept = cmd.slice(0, COMMAND_MAX);
+					session.history = [kept, ...session.history.filter((c) => c !== kept)].slice(0, HISTORY);
 				}
 				const said = aid === "ENTER" && cmdField && cmd && config.commands ? await config.commands(ctx, cmd, current) : undefined;
 				if (said !== undefined) {
@@ -246,6 +306,16 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 				} else {
 					next = await program(current.p).handle(ctx, current, inp);
 				}
+			}
+		}
+
+		if (!isLogoff(next) && !(await allowed(ctx, next))) {
+			const back = before && (await allowed(ctx, before)) ? before : await home(ctx);
+			next = !isLogoff(back) && (await allowed(ctx, back)) ? back : { logoff: refused(ctx) };
+			if (!isLogoff(next)) {
+				next.msg = refused(ctx);
+				takeFill(next);
+				takeDownload(next);
 			}
 		}
 
@@ -277,7 +347,7 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 			}
 			if (sync.message) breakIn(scr, sync.message.from, sync.message.text);
 		}
-		return { v: 1, state: await encode(next, session, key), screen: scr.toJSON(), ...(download ? { download } : {}) };
+		return { v: 1, state: await encode(next, session, fieldsOf(scr), who.id, key), screen: scr.toJSON(), ...(download ? { download } : {}) };
 	};
 }
 
@@ -293,22 +363,42 @@ function retrieve(ctx: Ctx, s: PanelState, field: string, session: Session): Pan
 	return withFill(s, { fields: { [field]: session.history[n] }, cursor: field });
 }
 
-function input(body: Record<string, unknown>, aid: string): Input {
+// input reads what the operator sent, keeping only the fields on the
+// screen they were sent from, cut to the length drawn. A numeric field
+// that holds anything a 3270 would not let be typed there is dropped.
+function input(body: Record<string, unknown>, aid: string, screen: Fields): Input {
 	const fields: Record<string, string> = {};
 	const raw = body.fields ?? {};
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw bad('"fields" must be an object');
 	for (const [k, v] of Object.entries(raw)) {
 		if (typeof v !== "string") throw bad(`field "${k}" must be a string`);
-		fields[k] = v;
+		if (!Object.hasOwn(screen, k)) continue;
+		const len = screen[k];
+		if (len < 0 && !/^[0-9.\- ]*$/.test(v)) continue;
+		fields[k] = v.slice(0, Math.abs(len));
 	}
 	const modified = body.modified ?? [];
 	if (!Array.isArray(modified) || modified.some((m) => typeof m !== "string")) {
 		throw bad('"modified" must be a list of field names');
 	}
 	const cursor = body.cursor;
-	const cursorField = typeof cursor === "object" && cursor !== null && "field" in cursor && typeof cursor.field === "string"
-		? cursor.field : "";
-	return { aid, fields, modified: new Set(modified as string[]), cursorField };
+	const named = typeof cursor === "object" && cursor !== null && "field" in cursor && typeof cursor.field === "string" ? cursor.field : "";
+	const cursorField = Object.hasOwn(screen, named) ? named : "";
+	return { aid, fields, modified: new Set((modified as string[]).filter((m) => Object.hasOwn(fields, m))), cursorField };
+}
+
+// devUser says the Worker signs everyone on as DEV_USER, under wrangler
+// dev without Access, where an unsigned commarea is allowed for convenience.
+function devUser(env: unknown): boolean {
+	const e = env as { DEV_USER?: unknown; ACCESS_AUD?: unknown } | null;
+	return !!e && !!e.DEV_USER && !e.ACCESS_AUD;
+}
+
+// label makes a terminal or system name the client sent fit to show: up
+// to eight letters, digits, #, @ or $. They are labels, not identities: a
+// client can call itself anything.
+function label(s: string): string {
+	return s.toUpperCase().replace(/[^A-Z0-9#@$]/g, "").slice(0, 8);
 }
 
 function clamp(n: number, lo: number, hi: number): number {

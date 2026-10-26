@@ -12,7 +12,10 @@
 	"durable_objects": { "bindings": [{ "name": "SESSIONS", "class_name": "Sessions" }] },
 	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Sessions"] }],
 	// Browser Rendering draws screen snapshots (Ctrl+S in the terminals).
-	"browser": { "binding": "BROWSER" }
+	"browser": { "binding": "BROWSER" },
+	// Each snapshot costs browser time: 10 a minute per cashier.
+	"ratelimits": [{ "name": "SNAPSHOT_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }]
 	// Secrets: wrangler secret put STATE_KEY, and set ACCESS_TEAM_DOMAIN and
-	// ACCESS_AUD once the Worker is behind Cloudflare Access.
+	// ACCESS_AUD once the Worker is behind Cloudflare Access. MANAGERS lists
+	// the emails that may change prices, comma separated.
 }

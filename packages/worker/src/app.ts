@@ -5,12 +5,12 @@
 // signedOn middleware.
 
 import { Hono, type Context, type MiddlewareHandler } from "hono";
-import { accessAuth, type AccessEnv, type Auth } from "./auth.js";
-import { requestKeys, screenHandler, type ScreenConfig } from "./engine.js";
+import { accessAuth, type AccessEnv, type Auth, type Identity } from "./auth.js";
+import { requestKeys, screenHandler, type ScreenConfig, type SessionStore } from "./engine.js";
 import { errorResponse, HttpError, json, readJSON, str } from "./http.js";
 import { format, imageResponse, render, screenHtml, snapScreen } from "./snapshot.js";
 
-export type AppEnv<E extends object> = { Bindings: E; Variables: { user: string } };
+export type AppEnv<E extends object> = { Bindings: E; Variables: { user: string; uid: string } };
 
 export interface AppConfig<E extends object> extends ScreenConfig<E> {
 	auth?: Auth<E>; // how a request signs on; default Cloudflare Access
@@ -20,26 +20,37 @@ export interface AppConfig<E extends object> extends ScreenConfig<E> {
 	// Returning undefined answers 503.
 	live?: (env: E) => { fetch(req: Request): Promise<Response> } | undefined;
 	// snapshot serves POST /v1/snapshot, a screen drawn as a PNG or PDF by
-	// Browser Rendering: browser returns the Browser Run binding.
-	snapshot?: { browser: (env: E) => BrowserRun | undefined };
+	// Browser Rendering: browser returns the Browser Run binding. Each one
+	// costs browser time, so a user gets SNAPSHOTS_PER_MINUTE of them: limit
+	// returns a rate limiting binding to count them across the Worker's
+	// isolates instead, keyed by userid.
+	snapshot?: { browser: (env: E) => BrowserRun | undefined; limit?: (env: E) => RateLimit | undefined };
 }
+
+export const SNAPSHOTS_PER_MINUTE = 10;
 
 // USER_HEADER carries the signed-on userid to the live server.
 export const USER_HEADER = "X-Greenscreen-User";
 
-// signedOn signs the request on and sets "user" to the userid, or throws
-// 401. It runs per route, so unknown paths get 404 without signing on.
-export function signedOn<E extends object>(auth: Auth<E>): MiddlewareHandler<AppEnv<E>> {
+// signedOn signs the request on and sets "user" to the userid and "uid"
+// to the identity, or throws 401. With sessions, the store gives each
+// identity a userid of its own. It runs per route, so unknown paths get 404
+// without signing on.
+export function signedOn<E extends object>(auth: Auth<E>, sessions?: (env: E) => SessionStore | undefined): MiddlewareHandler<AppEnv<E>> {
 	return async (c, next) => {
-		const ctx = c as unknown as Context<{ Variables: { user: string } }>;
-		ctx.set("user", await auth(c.env as E, c.req.raw));
+		const ctx = c as unknown as Context<{ Variables: { user: string; uid: string } }>;
+		const got = await auth(c.env as E, c.req.raw);
+		const who: Identity = typeof got === "string" ? { id: got, userid: got } : got;
+		const store = sessions?.(c.env as E);
+		ctx.set("user", store?.userid ? await store.userid(who.id, who.userid) : who.userid);
+		ctx.set("uid", who.id);
 		await next();
 	};
 }
 
 export function createApp<E extends object = AccessEnv>(config: AppConfig<E>): Hono<AppEnv<E>> & { signedOn: MiddlewareHandler<AppEnv<E>> } {
 	const auth = config.auth ?? (accessAuth() as Auth<E>);
-	const guard = signedOn(auth);
+	const guard = signedOn(auth, config.sessions);
 	const screen = screenHandler(config);
 	const app = new Hono<AppEnv<E>>({ strict: false });
 
@@ -65,7 +76,7 @@ export function createApp<E extends object = AccessEnv>(config: AppConfig<E>): H
 	app.post("/v1/session", guard, (c) => json(201, { userid: user(c) }));
 
 	app.post("/v1/screen", guard, async (c) =>
-		json(200, await screen(c.env as E, user(c), new URL(c.req.url), await readJSON(c.req.raw, requestKeys))));
+		json(200, await screen(c.env as E, { id: uid(c), userid: user(c) }, new URL(c.req.url), await readJSON(c.req.raw, requestKeys))));
 
 	const live = config.live;
 	if (live) {
@@ -83,7 +94,20 @@ export function createApp<E extends object = AccessEnv>(config: AppConfig<E>): H
 
 	const snapshot = config.snapshot;
 	if (snapshot) {
+		const counts = new Map<string, { since: number; n: number }>(); // in this isolate, without a limit binding
+		const allowed = async (env: E, who: string): Promise<boolean> => {
+			const binding = snapshot.limit?.(env);
+			if (binding) return (await binding.limit({ key: who })).success;
+			const now = Date.now();
+			for (const [k, v] of counts) if (now - v.since > 60_000) counts.delete(k);
+			const n = counts.get(who) ?? { since: now, n: 0 };
+			counts.set(who, n);
+			return ++n.n <= SNAPSHOTS_PER_MINUTE;
+		};
 		app.post("/v1/snapshot", guard, async (c) => {
+			if (!(await allowed(c.env as E, user(c)))) {
+				throw new HttpError(429, "too_many_requests", "too many snapshots: wait a minute");
+			}
 			const body = await readJSON(c.req.raw, ["format", "screen", "terminal", "map"]);
 			const f = format(body.format);
 			const scr = snapScreen(body.screen);
@@ -101,4 +125,9 @@ export function createApp<E extends object = AccessEnv>(config: AppConfig<E>): H
 // user is the userid signedOn set on the request.
 export function user(c: Context): string {
 	return (c as Context<{ Variables: { user: string } }>).get("user");
+}
+
+// uid is the identity signedOn set on the request (Identity.id).
+export function uid(c: Context): string {
+	return (c as Context<{ Variables: { uid: string } }>).get("uid");
 }

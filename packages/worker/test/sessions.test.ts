@@ -120,7 +120,7 @@ function terminal(a: ReturnType<typeof app>, user: string, terminal: string) {
 	let state = "";
 	const send = async (aid: string, extra: Record<string, unknown> = {}): Promise<Reply> => {
 		const res = await a.request("/v1/screen", {
-			method: "POST",
+			method: "POST", headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ v: 1, rows: 24, cols: 80, aid, state, terminal, ...extra }),
 		}, { DEV_USER: user });
 		expect(res.status).toBe(200);
@@ -251,7 +251,7 @@ describe("engine hooks", () => {
 			handle: (_ctx, s) => s,
 		});
 		const a = createApp<Env>({ app: { title: "T", prefix: "TST", system: "S" }, programs: { menu: probe } });
-		const res = await a.request("/v1/screen", { method: "POST", body: JSON.stringify({ v: 1, aid: "START", live: true }) }, { DEV_USER: "x" });
+		const res = await a.request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, aid: "START", live: true }) }, { DEV_USER: "x" });
 		expect(seen).toBe(true);
 		expect((await res.json() as Reply).screen.live).toBe("syslog"); // what GET /v1/live announces for this screen
 	});

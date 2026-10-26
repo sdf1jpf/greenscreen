@@ -46,7 +46,8 @@ export interface AppInfo {
 export interface Ctx<E = unknown> {
 	env: E;
 	app: AppInfo;
-	user: string; // the signed-on userid
+	user: string; // the signed-on userid, for screens; unique among the app's users when it has sessions
+	uid: string; // the signed-on identity, unique: the email or service token client ID, through Access
 	rows: number;
 	cols: number;
 	system: string;

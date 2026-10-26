@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="terminal.css">
+</head>
+<body>
+<main id="tube" aria-label="3270 terminal">
+	<pre id="screen" aria-live="polite"></pre>
+	<pre id="oia"></pre>
+</main>
+<nav id="keys" aria-label="Terminal keys">
+	<button tabindex="-1" data-aid="ENTER">ENTER</button>
+	<button tabindex="-1" data-aid="CLEAR">CLEAR</button>
+	<button tabindex="-1" data-aid="RESET">RESET</button>
+	<button tabindex="-1" data-aid="PA1">PA1</button>
+	<button tabindex="-1" data-aid="PA2">PA2</button>
+	<button tabindex="-1" data-aid="PF1">PF1</button>
+	<button tabindex="-1" data-aid="PF2">PF2</button>
+	<button tabindex="-1" data-aid="PF3">PF3</button>
+	<button tabindex="-1" data-aid="PF4">PF4</button>
+	<button tabindex="-1" data-aid="PF5">PF5</button>
+	<button tabindex="-1" data-aid="PF6">PF6</button>
+	<button tabindex="-1" data-aid="PF7">PF7</button>
+	<button tabindex="-1" data-aid="PF8">PF8</button>
+	<button tabindex="-1" data-aid="PF9">PF9</button>
+	<button tabindex="-1" data-aid="PF10">PF10</button>
+	<button tabindex="-1" data-aid="PF11">PF11</button>
+	<button tabindex="-1" data-aid="PF12">PF12</button>
+	<button tabindex="-1" data-aid="PF24" title="RETRIEVE: the last command back on the command line">RETRV</button>
+</nav>
+<span id="probe" aria-hidden="true">0000000000</span>
+<script type="module" src="terminal.js"></script>
+</body>
+</html>

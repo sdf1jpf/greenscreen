@@ -239,18 +239,21 @@ describe("engine hooks", () => {
 		expect(texts(r)).toContain("HELP - NAME FOR ALICE");
 	});
 
-	it("passes the live flag to panels", async () => {
+	it("passes the live flag to panels and sends the screen's live name", async () => {
 		let seen: boolean | undefined;
 		const probe = panel<PanelState & { p: "menu" }, Env>({
 			render(ctx) {
 				seen = ctx.live;
-				return newScreen(ctx, "TSTM00");
+				const scr = newScreen(ctx, "TSTM00");
+				scr.live = "syslog";
+				return scr;
 			},
 			handle: (_ctx, s) => s,
 		});
 		const a = createApp<Env>({ app: { title: "T", prefix: "TST", system: "S" }, programs: { menu: probe } });
-		await a.request("/v1/screen", { method: "POST", body: JSON.stringify({ v: 1, aid: "START", live: true }) }, { DEV_USER: "x" });
+		const res = await a.request("/v1/screen", { method: "POST", body: JSON.stringify({ v: 1, aid: "START", live: true }) }, { DEV_USER: "x" });
 		expect(seen).toBe(true);
+		expect((await res.json() as Reply).screen.live).toBe("syslog"); // what GET /v1/live announces for this screen
 	});
 
 	it("opens the app's own help program on PF1", async () => {

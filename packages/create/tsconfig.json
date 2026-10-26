@@ -1,0 +1,8 @@
+{
+  "extends": "./template/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@greenscreen/worker": ["../worker/src/index.ts"] }
+  },
+  "include": ["template/src", "template/test"]
+}

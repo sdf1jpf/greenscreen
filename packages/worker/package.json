@@ -1,7 +1,6 @@
 {
   "name": "@greenscreen/worker",
   "version": "0.1.0",
-  "private": true,
   "description": "Serve 3270-style screens from a Cloudflare Worker",
   "type": "module",
   "exports": {
@@ -11,12 +10,14 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
     "hono": "^4.13.0"
@@ -26,5 +27,14 @@
     "hono": "^4.13.14",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sdf1jpf/greenscreen.git",
+    "directory": "packages/worker"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

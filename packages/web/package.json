@@ -1,10 +1,12 @@
 {
   "name": "@greenscreen/web",
   "version": "0.1.0",
-  "private": true,
   "description": "A 3270 terminal in the browser for Greenscreen applications",
   "type": "module",
-  "files": ["public"],
+  "files": [
+    "public",
+    "README.md"
+  ],
   "exports": {
     "./protocol.js": "./public/protocol.js",
     "./screen.js": "./public/screen.js"
@@ -14,5 +16,14 @@
   },
   "devDependencies": {
     "vitest": "^4.1.12"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sdf1jpf/greenscreen.git",
+    "directory": "packages/web"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

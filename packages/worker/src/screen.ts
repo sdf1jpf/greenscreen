@@ -61,6 +61,7 @@ export class Screen {
 	readonly fields: Field[] = [];
 	cursor?: Cursor;
 	refresh?: number; // seconds: the client redraws the screen this often while idle
+	live?: string; // what the screen shows that GET /v1/live announces changes to, such as "syslog"
 
 	constructor(
 		readonly map: string,
@@ -102,7 +103,7 @@ export class Screen {
 	}
 
 	toJSON(): ScreenJSON {
-		return { map: this.map, rows: this.rows, cols: this.cols, fields: this.fields, cursor: this.cursor, refresh: this.refresh };
+		return { map: this.map, rows: this.rows, cols: this.cols, fields: this.fields, cursor: this.cursor, refresh: this.refresh, live: this.live };
 	}
 }
 
@@ -113,6 +114,7 @@ export interface ScreenJSON {
 	fields: Field[];
 	cursor?: Cursor;
 	refresh?: number;
+	live?: string;
 }
 
 // textLines returns what the screen shows, row by row, without the message

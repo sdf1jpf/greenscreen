@@ -1,6 +1,6 @@
 {
   "name": "@greenscreen-dev/worker",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Serve 3270-style screens from a Cloudflare Worker",
   "type": "module",
   "exports": {

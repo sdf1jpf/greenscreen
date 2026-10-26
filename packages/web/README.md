@@ -1,0 +1,26 @@
+# @greenscreen/web
+
+The 3270 terminal in a browser page: it draws the screens a Greenscreen
+Worker sends from `POST /v1/screen`, edits them locally, and sends the
+modified fields back on an AID key. Same keys as the Go terminal, plus an
+on-screen key bar for touch screens.
+
+Serve `public/` from the same origin as the API. With Workers static
+assets, point `assets.directory` at it in `wrangler.jsonc`:
+
+```jsonc
+{
+  "main": "src/index.ts",
+  "assets": { "directory": "node_modules/@greenscreen/web/public" }
+}
+```
+
+Requests for files in `public/` are answered from assets; everything else
+(`/v1/...`) reaches the Worker. Behind Cloudflare Access the page signs on
+with the Access cookie, and an expired session reloads to sign on again.
+
+The page titles itself from `GET /v1/screen/info` and shows the app's system
+name in the status line. Add `?lu=TILL01` to the URL to name the terminal.
+
+`public/protocol.js` and `public/screen.js` have no DOM dependencies and can
+be imported on their own (`@greenscreen/web/protocol.js`, `/screen.js`).

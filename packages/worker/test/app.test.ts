@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	createApp, header, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, serviceTokenAuth, tokenHash, values,
+	createApp, header, userIdFor, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, serviceTokenAuth, tokenHash, values,
 	USER_HEADER, type AccessEnv, type AppConfig, type PanelState, type ScreenJSON,
 } from "../src";
 
@@ -131,6 +131,17 @@ describe("screen engine", () => {
 		expect(texts(own)).toContain("COUNT 6");
 	});
 
+	it("binds the commarea to the identity, not the userid", async () => {
+		const auth = async (_env: Env, req: Request) => ({ id: req.headers.get("X-Id") ?? "", userid: "JOHNSMIT" });
+		const a = app({ auth });
+		const post = async (id: string, body: Record<string, unknown>): Promise<Reply> =>
+			(await a.request("/v1/screen", { method: "POST", headers: { "X-Id": id }, body: JSON.stringify({ v: 1, ...body }) }, { STATE_KEY: "k" })).json();
+		const start = await post("john.smith@a.com", { aid: "START" });
+		const c = await post("john.smith@a.com", { aid: "ENTER", state: start.state, fields: { option: "1 5" } });
+		expect(texts(c)).toContain("COUNT 5");
+		expect(texts(await post("johnsmith@b.com", { aid: "ENTER", state: c.state }))).toContain("SCREEN STATE LOST");
+	});
+
 	it("refuses a commarea older than its lifetime", async () => {
 		vi.useFakeTimers({ toFake: ["Date"] });
 		const start = await send({ aid: "START" });
@@ -252,27 +263,36 @@ describe("app routes", () => {
 
 	it("lets the app add signed-on routes", async () => {
 		const a = app();
-		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user") }));
-		expect(await (await a.request("/v1/whoami", {}, devEnv)).json()).toEqual({ user: "TESTER" });
+		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user"), uid: c.get("uid") }));
+		expect(await (await a.request("/v1/whoami", {}, devEnv)).json()).toEqual({ user: "TESTER", uid: "TESTER" });
 	});
 });
 
 describe("serviceTokenAuth", () => {
-	it("signs on a known service token as its client ID, and nothing else", async () => {
+	it("signs on a known service token as its client ID, as Access does, and nothing else", async () => {
 		const hash = await tokenHash("s3cret");
 		const a = createApp<Env & { TOKENS?: Record<string, string> }>({
 			app: { title: "TEST SYSTEM", prefix: "TST", system: "SYS9" },
 			programs: { menu },
 			auth: serviceTokenAuth((env) => env.TOKENS),
 		});
-		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user") }));
+		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user"), uid: c.get("uid") }));
 		const env = { TOKENS: { "Reg-1.access": hash } };
 		const who = (h: Record<string, string>) => a.request("/v1/whoami", { headers: h }, env);
 		const ok = await who({ "CF-Access-Client-Id": "REG-1.access", "CF-Access-Client-Secret": "s3cret" });
-		expect(await ok.json()).toEqual({ user: "reg-1.access" });
+		expect(await ok.json()).toEqual({ user: "REG1", uid: "token:reg-1.access" });
 		expect((await who({ "CF-Access-Client-Id": "reg-1.access", "CF-Access-Client-Secret": "wrong" })).status).toBe(401);
 		expect((await who({ "CF-Access-Client-Id": "reg-2.access", "CF-Access-Client-Secret": "s3cret" })).status).toBe(401);
 		expect((await who({})).status).toBe(401);
 		expect((await a.request("/v1/whoami", { headers: { "CF-Access-Client-Id": "reg-1.access", "CF-Access-Client-Secret": "s3cret" } }, {})).status).toBe(401);
+	});
+});
+
+describe("userIdFor", () => {
+	it("makes a TSO-style name, which is not unique", () => {
+		expect(userIdFor({ email: "john.smith@a.com" })).toBe("JOHNSMIT");
+		expect(userIdFor({ email: "johnsmith@b.com" })).toBe("JOHNSMIT");
+		expect(userIdFor({ common_name: "0123abcd9876.access" })).toBe("0123ABCD");
+		expect(userIdFor({})).toBe("SERVICE");
 	});
 });

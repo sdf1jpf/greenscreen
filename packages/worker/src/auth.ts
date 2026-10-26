@@ -18,8 +18,19 @@ export interface Claims {
 	aud?: string | string[];
 	exp?: number;
 	nbf?: number;
+	sub?: string; // the user's ID in Access; empty for service tokens
 	email?: string;
 	common_name?: string; // service tokens: the client ID
+}
+
+// Identity is who signed on. id is unique and never changes for a person
+// or a service token, such as the Access sub; userid is the TSO-style name
+// for screens and SEND, up to eight characters. Two identities can want the
+// same userid (john.smith@ and johnsmith@ both make JOHNSMIT), so with
+// sessions each id gets a userid of its own (see SessionStore.userid).
+export interface Identity {
+	id: string;
+	userid: string;
 }
 
 // Signing keys per team domain, refetched hourly or when a new kid appears.
@@ -82,17 +93,26 @@ async function verify(team: string, aud: string, jwt: string): Promise<Claims | 
 }
 
 // userIdFor turns an Access identity into a mainframe-style userid: the
-// email's local part, upper case, letters and digits only, at most eight
-// characters. Service tokens (used by CI) log on as SERVICE.
+// email's local part, or a service token's client ID, upper case, letters
+// and digits only, at most eight characters. It is a name to show, not an
+// identity: different people can get the same one.
 export function userIdFor(claims: Claims): string {
-	if (!claims.email) return "SERVICE";
-	const local = claims.email.split("@")[0].toUpperCase().replace(/[^A-Z0-9]/g, "");
-	return local.slice(0, 8) || "USER";
+	const name = claims.email ? claims.email.split("@")[0] : (claims.common_name ?? "").replace(/\.access$/i, "");
+	const id = name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+	return id || (claims.email ? "USER" : "SERVICE");
 }
 
-// Auth signs a request on: it returns the userid, or throws a 401
-// HttpError. E is the Worker's bindings.
-export type Auth<E = unknown> = (env: E, req: Request) => Promise<string>;
+// identityFor is the Identity of an Access JWT's claims: the Access sub
+// (or a service token's client ID), named by userId.
+function identityFor(claims: Claims, userId: (claims: Claims) => string): Identity {
+	const id = claims.sub || (claims.common_name ? `token:${claims.common_name.toLowerCase()}` : `email:${claims.email?.toLowerCase() ?? ""}`);
+	return { id, userid: userId(claims) };
+}
+
+// Auth signs a request on: it returns who signed on, or throws a 401
+// HttpError. A plain string is a userid that is its own identity. E is the
+// Worker's bindings.
+export type Auth<E = unknown> = (env: E, req: Request) => Promise<string | Identity>;
 
 export interface AccessEnv {
 	ACCESS_TEAM_DOMAIN?: string; // e.g. "example.cloudflareaccess.com"
@@ -112,7 +132,7 @@ export function accessAuth<E extends AccessEnv>(userId: (claims: Claims) => stri
 		const jwt = req.headers.get(ASSERTION_HEADER);
 		const claims = jwt ? await verify(env.ACCESS_TEAM_DOMAIN, env.ACCESS_AUD, jwt) : undefined;
 		if (!claims) throw new HttpError(401, "unauthorized", "not signed in through Cloudflare Access");
-		return userId(claims);
+		return identityFor(claims, userId);
 	};
 }
 
@@ -131,8 +151,8 @@ export async function tokenHash(secret: string): Promise<string> {
 // a server Cloudflare Access isn't in front of: one on a store's own
 // network, say, that its terminals reach directly. They keep the token
 // they use through Access, so a terminal moves between the two by its URL
-// alone. tokens maps each client ID to tokenHash(secret); the userid is
-// the client ID, lower case, as accessAuth's claims.common_name.
+// alone. tokens maps each client ID to tokenHash(secret); the identity is
+// the same as accessAuth gives the token, so its userid is too.
 export function serviceTokenAuth<E>(tokens: (env: E) => Record<string, string> | undefined): Auth<E> {
 	return async (env, req) => {
 		const id = req.headers.get(CLIENT_ID_HEADER)?.trim().toLowerCase();
@@ -142,7 +162,7 @@ export function serviceTokenAuth<E>(tokens: (env: E) => Record<string, string> |
 		if (!id || !secret || !want || !same(await tokenHash(secret), want)) {
 			throw new HttpError(401, "unauthorized", "not signed on: send a known service token");
 		}
-		return id;
+		return identityFor({ common_name: id }, userIdFor);
 	};
 }
 

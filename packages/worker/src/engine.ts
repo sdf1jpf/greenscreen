@@ -3,6 +3,7 @@
 // its input fields and the commarea from the last reply; the engine runs
 // the panel the commarea names and answers with the next screen.
 
+import type { Identity } from "./auth.js";
 import { open, seal } from "./commarea.js";
 import type { FieldHelpLookup } from "./fieldhelp.js";
 import { helpProgram } from "./help.js";
@@ -47,6 +48,11 @@ export interface SessionStore {
 	// want. conflict is another session holding one of them, and then
 	// nothing changed. message is one waiting for the user, now delivered.
 	sync(sid: string, user: string, terminal: string, map: string, want: string[]): SyncResult | Promise<SyncResult>;
+	// userid gives the identity id the userid it signs on as: the one it
+	// had before, or want if no other identity has it, or want with a
+	// number in it (JOHNSMI2). Everything else here is keyed on the userid,
+	// so two people must never share one.
+	userid?(id: string, want: string): string | Promise<string>;
 }
 
 export interface HoldResult { sid: string; lost?: Holder | null }
@@ -111,7 +117,9 @@ interface Session {
 	retrieved?: number; // the history entry PF24 last put back
 }
 
-export type ScreenHandler<E> = (env: E, user: string, url: URL, body: Record<string, unknown>) => Promise<ScreenResponse>;
+// who is the signed-on identity, with the userid the app's SessionStore
+// gave it.
+export type ScreenHandler<E> = (env: E, who: Identity, url: URL, body: Record<string, unknown>) => Promise<ScreenResponse>;
 
 export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 	const programs: Record<string, Program<PanelState, E>> = {
@@ -137,8 +145,8 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 		return st.back === undefined || valid(st.back, depth + 1);
 	}
 
-	// The commarea names the user it was issued to and when, so it can't be
-	// sent back by anyone else or, after its lifetime, by anyone at all.
+	// The commarea names the identity it was issued to and when, so it
+	// can't be sent back by anyone else or, after its lifetime, by anyone.
 	async function encode(s: PanelState, session: Session, user: string, key?: string): Promise<string> {
 		const out: Record<string, unknown> = { sv: stateVersion, u: user, i: Math.floor(Date.now() / 1000), s };
 		if (session.sid) out.t = session.sid;
@@ -183,13 +191,15 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 		return s;
 	};
 
-	return async (env, user, url, body) => {
+	return async (env, who, url, body) => {
 		if (body.v !== 1) throw bad('"v" must be 1');
+		const user = who.userid;
 		const aid = str(body, "aid");
 		const ctx: Ctx<E> = {
 			env,
 			app: config.app,
 			user,
+			uid: who.id,
 			rows: clamp(int(body, "rows"), MIN_ROWS, MAX_ROWS),
 			cols: clamp(int(body, "cols"), MIN_COLS, MAX_COLS),
 			system: str(body, "system") || config.app.system,
@@ -210,7 +220,7 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 		let next: Next;
 		let session: Session = { history: [] };
 		let before: PanelState | undefined; // the screen as it was, to go back to if a lock is refused
-		const got = aid === "START" ? undefined : await decode(str(body, "state"), user, key);
+		const got = aid === "START" ? undefined : await decode(str(body, "state"), who.id, key);
 		if (got) session = got.session;
 		ctx.sid = session.sid ?? "";
 		if (aid === "START") {
@@ -298,7 +308,7 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 			}
 			if (sync.message) breakIn(scr, sync.message.from, sync.message.text);
 		}
-		return { v: 1, state: await encode(next, session, user, key), screen: scr.toJSON(), ...(download ? { download } : {}) };
+		return { v: 1, state: await encode(next, session, who.id, key), screen: scr.toJSON(), ...(download ? { download } : {}) };
 	};
 }
 

@@ -107,6 +107,13 @@ network, can check the same service tokens itself: give `createApp` the
 ID to `await tokenHash(secret)`. A terminal then moves between the two by
 its `-api` URL alone.
 
+A userid is TSO-style, eight characters from the email or client ID, so
+two people can want the same one (`john.smith@` and `johnsmith@` are both
+`JOHNSMIT`). With `sessions`, the Sessions object gives each Access
+identity its own for good (the second is `JOHNSMI2`), and locks, SEND and
+live pushes stay apart. Without sessions, record who did something with
+`ctx.uid`, the stable identity, rather than `ctx.user`.
+
 ## Releasing
 
 Bump the version in `packages/worker`, `packages/web` and `packages/create`

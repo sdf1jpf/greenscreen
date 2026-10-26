@@ -67,9 +67,25 @@ export class Sessions<E = unknown> extends DurableObject<E> {
 				id INTEGER PRIMARY KEY AUTOINCREMENT, to_user TEXT NOT NULL, from_user TEXT NOT NULL,
 				text TEXT NOT NULL, sent INTEGER NOT NULL);
 			CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
+			CREATE TABLE IF NOT EXISTS userids (id TEXT PRIMARY KEY, userid TEXT NOT NULL UNIQUE);
 		`);
 		// A client's keepalive is answered without waking the object.
 		ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+	}
+
+	// userid gives identity id a userid of its own, for good: want if it is
+	// free, or else want with the lowest number in it that is (JOHNSMI2).
+	userid(id: string, want: string): string {
+		const had = this.sql.exec<{ userid: string }>("SELECT userid FROM userids WHERE id = ?", id).toArray()[0];
+		if (had) return had.userid;
+		for (let n = 1; ; n++) {
+			const suffix = n === 1 ? "" : String(n);
+			const userid = n === 1 ? want : want.slice(0, Math.max(1, 8 - suffix.length)) + suffix;
+			if (this.sql.exec("SELECT 1 FROM userids WHERE userid = ?", userid).toArray().length === 0) {
+				this.sql.exec("INSERT INTO userids (id, userid) VALUES (?, ?)", id, userid);
+				return userid;
+			}
+		}
 	}
 
 	// logon starts a session and returns its TSU id.

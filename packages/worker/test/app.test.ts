@@ -67,7 +67,7 @@ type Reply = { v: 1; state: string; screen: ScreenJSON } & { logoff?: { message:
 
 async function send(body: Record<string, unknown>, env: Env = devEnv): Promise<Reply> {
 	const res = await app().request("/v1/screen", {
-		method: "POST",
+		method: "POST", headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ v: 1, rows: 24, cols: 80, ...body }),
 	}, env);
 	expect(res.status).toBe(200);
@@ -135,7 +135,7 @@ describe("screen engine", () => {
 		const auth = async (_env: Env, req: Request) => ({ id: req.headers.get("X-Id") ?? "", userid: "JOHNSMIT" });
 		const a = app({ auth });
 		const post = async (id: string, body: Record<string, unknown>): Promise<Reply> =>
-			(await a.request("/v1/screen", { method: "POST", headers: { "X-Id": id }, body: JSON.stringify({ v: 1, ...body }) }, { STATE_KEY: "k" })).json();
+			(await a.request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json", "X-Id": id }, body: JSON.stringify({ v: 1, ...body }) }, { STATE_KEY: "k" })).json();
 		const start = await post("john.smith@a.com", { aid: "START" });
 		const c = await post("john.smith@a.com", { aid: "ENTER", state: start.state, fields: { option: "1 5" } });
 		expect(texts(c)).toContain("COUNT 5");
@@ -146,7 +146,7 @@ describe("screen engine", () => {
 		let counters = ["ALICE"];
 		const a = app({ allow: (ctx, s) => s.p !== "count" || counters.includes(ctx.user) });
 		const post = async (user: string, body: Record<string, unknown>): Promise<Reply> =>
-			(await a.request("/v1/screen", { method: "POST", body: JSON.stringify({ v: 1, ...body }) }, { DEV_USER: user, STATE_KEY: "k" })).json();
+			(await a.request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, ...body }) }, { DEV_USER: user, STATE_KEY: "k" })).json();
 		const bob = await post("bob", { aid: "START" });
 		const refused = await post("bob", { aid: "ENTER", state: bob.state, fields: { option: "1 5" } });
 		expect(refused.screen.map).toBe("TSTM00");
@@ -187,12 +187,12 @@ describe("screen engine", () => {
 
 	it("refuses to serve without a signing key outside wrangler dev", async () => {
 		const auth = async () => "TESTER";
-		const res = await app({ auth }).request("/v1/screen", { method: "POST", body: JSON.stringify({ v: 1, aid: "START" }) }, {});
+		const res = await app({ auth }).request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, aid: "START" }) }, {});
 		expect(res.status).toBe(500);
 		expect(await res.text()).toContain("signing key is not set");
-		const signed = await app({ auth }).request("/v1/screen", { method: "POST", body: JSON.stringify({ v: 1, aid: "START" }) }, { STATE_KEY: "k" });
+		const signed = await app({ auth }).request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, aid: "START" }) }, { STATE_KEY: "k" });
 		expect(signed.status).toBe(200);
-		const unsigned = await app({ auth, unsigned: true }).request("/v1/screen", { method: "POST", body: JSON.stringify({ v: 1, aid: "START" }) }, {});
+		const unsigned = await app({ auth, unsigned: true }).request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, aid: "START" }) }, {});
 		expect(unsigned.status).toBe(200);
 	});
 
@@ -230,10 +230,22 @@ describe("screen engine", () => {
 		expect(idle.logoff?.message).toContain("S522");
 	});
 
+	it("takes only JSON bodies and names it can show", async () => {
+		const form = await app().request("/v1/screen", {
+			method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: JSON.stringify({ v: 1, aid: "START" }),
+		}, devEnv);
+		expect(form.status).toBe(415);
+		const events: string[] = [];
+		await app({ onEvent: (_ctx, e) => void events.push(e.text) }).request("/v1/screen", {
+			method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, aid: "START", terminal: "<b>evil term</b>" }),
+		}, devEnv);
+		expect(events).toEqual(["IKJ56455I TESTER LOGON IN PROGRESS ON BEVILTER"]);
+	});
+
 	it("rejects an unknown AID", async () => {
 		const start = await send({ aid: "START" });
 		const res = await app().request("/v1/screen", {
-			method: "POST", body: JSON.stringify({ v: 1, aid: "PF99", state: start.state }),
+			method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, aid: "PF99", state: start.state }),
 		}, devEnv);
 		expect(res.status).toBe(400);
 	});
@@ -248,7 +260,7 @@ describe("app routes", () => {
 	});
 
 	it("needs Access when it is configured", async () => {
-		const res = await app().request("/v1/screen", { method: "POST", body: "{}" },
+		const res = await app().request("/v1/screen", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
 			{ ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.test", ACCESS_AUD: "aud" });
 		expect(res.status).toBe(401);
 	});
@@ -274,7 +286,7 @@ describe("app routes", () => {
 		expect(seen).toEqual(["TESTER"]);
 
 		const snap = await a.request("/v1/snapshot", {
-			method: "POST",
+			method: "POST", headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ format: "png", map: "tstm00", screen: { rows: 24, cols: 80, fields: [{ row: 1, col: 2, text: "HELLO" }] } }),
 		}, devEnv);
 		expect(snap.status).toBe(200);
@@ -282,13 +294,13 @@ describe("app routes", () => {
 		expect(snap.headers.get("Content-Disposition")).toMatch(/filename="TSTM00-\d{12}\.png"/);
 		expect(await snap.text()).toBe("PNG");
 		expect(drawn).toEqual(["screenshot"]);
-		const bad = await a.request("/v1/snapshot", { method: "POST", body: JSON.stringify({ format: "gif", screen: {} }) }, devEnv);
+		const bad = await a.request("/v1/snapshot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ format: "gif", screen: {} }) }, devEnv);
 		expect(bad.status).toBe(400);
 	});
 
 	it("leaves live and snapshots out when the app has neither", async () => {
 		expect((await app().request("/v1/live", { headers: { Upgrade: "websocket" } }, devEnv)).status).toBe(404);
-		expect((await app().request("/v1/snapshot", { method: "POST", body: "{}" }, devEnv)).status).toBe(404);
+		expect((await app().request("/v1/snapshot", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, devEnv)).status).toBe(404);
 	});
 
 	it("lets the app add signed-on routes", async () => {

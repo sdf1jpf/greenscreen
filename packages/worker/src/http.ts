@@ -42,9 +42,13 @@ export function errorResponse(e: HttpError): Response {
 
 const MAX_BODY = 1 << 20;
 
-// readJSON parses a request body as a JSON object, rejecting oversized
-// bodies and keys outside `allowed`.
+// readJSON parses a request body as a JSON object, rejecting other content
+// types, oversized bodies and keys outside `allowed`. Requiring
+// application/json means a cross-site form can't post one, whatever the
+// sign-in cookie's SameSite.
 export async function readJSON(req: Request, allowed: readonly string[]): Promise<Record<string, unknown>> {
+	const type = req.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
+	if (type !== "application/json") throw new HttpError(415, "bad_request", "send the body as application/json");
 	const text = await req.text();
 	if (text.length > MAX_BODY) throw new HttpError(413, "bad_request", "request body too large");
 	let body: unknown;

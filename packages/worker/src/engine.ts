@@ -226,8 +226,8 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 			uid: who.id,
 			rows: clamp(int(body, "rows"), MIN_ROWS, MAX_ROWS),
 			cols: clamp(int(body, "cols"), MIN_COLS, MAX_COLS),
-			system: str(body, "system") || config.app.system,
-			terminal: str(body, "terminal") || "TERM0001",
+			system: label(str(body, "system")) || config.app.system,
+			terminal: label(str(body, "terminal")) || "TERM0001",
 			host: url.host,
 			tzOffset: clamp(int(body, "tz_offset"), -14 * 60, 14 * 60),
 			sid: "",
@@ -392,6 +392,13 @@ function input(body: Record<string, unknown>, aid: string, screen: Fields): Inpu
 function devUser(env: unknown): boolean {
 	const e = env as { DEV_USER?: unknown; ACCESS_AUD?: unknown } | null;
 	return !!e && !!e.DEV_USER && !e.ACCESS_AUD;
+}
+
+// label makes a terminal or system name the client sent fit to show: up
+// to eight letters, digits, #, @ or $. They are labels, not identities: a
+// client can call itself anything.
+function label(s: string): string {
+	return s.toUpperCase().replace(/[^A-Z0-9#@$]/g, "").slice(0, 8);
 }
 
 function clamp(n: number, lo: number, hi: number): number {

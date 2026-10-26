@@ -18,7 +18,8 @@ through Cloudflare Access by default.
 
 ## Request
 
-`POST /v1/screen`, signed on like every endpoint but health and info.
+`POST /v1/screen`, signed on like every endpoint but health and info, with
+`Content-Type: application/json` (any other type gets a 415).
 
 ```json
 {
@@ -45,7 +46,7 @@ through Cloudflare Access by default.
 | `modified` | Names of the input fields whose modified data tag is set (the operator typed in them). |
 | `cursor` | 1-based row and column of the cursor, and the name of the input field it is in, or `""`. Field-level help (PF1 on a field) uses `field`. |
 | `rows`, `cols` | Size of the presentation space. The Worker lays the screen out for it, no smaller than 24x80. |
-| `terminal`, `system` | The terminal (LU) name and system name to show on screens. Optional. |
+| `terminal`, `system` | The terminal (LU) name and system name to show on screens, up to eight letters, digits, `#`, `@` or `$` (others are dropped). Optional. They are labels: the server does not trust them to say who or where the client is. |
 | `tz_offset` | The client's offset from UTC in minutes (east positive), so times show in local time. Optional, default 0. |
 | `live` | `true` while the client is connected to `GET /v1/live` (see Live screens). Optional. |
 

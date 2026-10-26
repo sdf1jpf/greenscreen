@@ -15,7 +15,7 @@ function terminal(user = "cashier1") {
 	let state = "";
 	async function key(aid: string, fields: Record<string, string> = {}, cursor = ""): Promise<Reply> {
 		const res = await app.request("/v1/screen", {
-			method: "POST",
+			method: "POST", headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ v: 1, aid, state, fields, modified: Object.keys(fields), cursor: { row: 1, col: 1, field: cursor }, rows: 24, cols: 80 }),
 		}, env);
 		expect(res.status).toBe(200);

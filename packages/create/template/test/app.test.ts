@@ -7,7 +7,7 @@ it("says hello and counts", async () => {
 	let state = "";
 	const key = async (aid: string, fields: Record<string, string> = {}) => {
 		const res = await app.request("/v1/screen", {
-			method: "POST",
+			method: "POST", headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ v: 1, aid, state, fields, modified: Object.keys(fields), rows: 24, cols: 80 }),
 		}, env);
 		const r = await res.json() as { state: string; screen: { map: string; fields: { text?: string }[] } };

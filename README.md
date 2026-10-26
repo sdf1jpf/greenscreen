@@ -15,7 +15,7 @@ in [docs/protocol.md](docs/protocol.md).
 | [Go terminal](cmd/greenscreen) | One binary for every app, run in any terminal: `go install github.com/sdf1jpf/greenscreen/cmd/greenscreen@latest`. The 3270 screen model is importable as [`tn3270`](tn3270). |
 | [`@greenscreen/web`](packages/web) | The same terminal in a browser page, served from the Worker's static assets. |
 | [`examples/pos`](examples/pos) | A point-of-sale app: sale entry, tender, receipts, price list, end of day. |
-| `create-greenscreen` (coming) | A starter app. |
+| [`create-greenscreen`](packages/create) | `npm create greenscreen@latest my-app` makes a starter app. |
 
 ## A panel
 
@@ -83,6 +83,18 @@ It asks the application for its name, system and logon banner
 Worker sends. Give `/v1/screen/info` and `/v1/health` an Access Bypass
 policy so the logon screen can be titled before sign-in; without one the
 terminal uses its defaults. `-h` lists the flags.
+
+## Releasing
+
+Bump the version in `packages/worker`, `packages/web` and `packages/create`
+(and the template's dependencies), then push a matching tag, e.g. `v0.2.0`.
+The Release workflow tests and publishes to npm with the `NPM_TOKEN`
+secret. The Go terminal is released by the same tag: `go install
+github.com/sdf1jpf/greenscreen/cmd/greenscreen@v0.2.0`.
+
+## License
+
+MIT
 
 ## Developing
 

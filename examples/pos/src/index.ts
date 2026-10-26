@@ -3,7 +3,7 @@
 // screen is a panel in this directory; @greenscreen-dev/worker does the rest.
 
 import { createApp, helpTable, logoff, menuProgram, sendCommand, values } from "@greenscreen-dev/worker";
-import { dollars, newSale, store, type Env } from "./common";
+import { dollars, manager, newSale, store, type Env } from "./common";
 import { eod } from "./eod";
 import { price, prices } from "./prices";
 import { receipt } from "./receipt";
@@ -36,6 +36,8 @@ const tso = (env: Env) => env.SESSIONS?.get(env.SESSIONS.idFromName("TSO"));
 const app = createApp<Env>({
 	app: { title: "POINT OF SALE", prefix: "POS", system: "POS1" },
 	programs: { menu, sale, tender, receipt, receipts, prices, price, eod },
+	// The price change panel is for managers only, however it is reached.
+	allow: (ctx, s) => s.p !== "price" || manager(ctx),
 	sessions: tso,
 	live: tso,
 	commands: sendCommand<Env>({ mailbox: (ctx) => tso(ctx.env)! }),

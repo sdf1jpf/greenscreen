@@ -14,5 +14,6 @@
 	// Browser Rendering draws screen snapshots (Ctrl+S in the terminals).
 	"browser": { "binding": "BROWSER" }
 	// Secrets: wrangler secret put STATE_KEY, and set ACCESS_TEAM_DOMAIN and
-	// ACCESS_AUD once the Worker is behind Cloudflare Access.
+	// ACCESS_AUD once the Worker is behind Cloudflare Access. MANAGERS lists
+	// the emails that may change prices, comma separated.
 }

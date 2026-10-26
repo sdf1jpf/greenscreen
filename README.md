@@ -112,7 +112,7 @@ two people can want the same one (`john.smith@` and `johnsmith@` are both
 `JOHNSMIT`). With `sessions`, the Sessions object gives each Access
 identity its own for good (the second is `JOHNSMI2`), and locks, SEND and
 live pushes stay apart. Without sessions, record who did something with
-`ctx.uid`, the stable identity, rather than `ctx.user`.
+`ctx.uid` (the email, or a service token's client ID) rather than `ctx.user`.
 
 ## Releasing
 

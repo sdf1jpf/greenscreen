@@ -65,6 +65,13 @@ export interface ScreenConfig<E = unknown> {
 	// The record is checked at run time, so any Program fits.
 	programs: Record<string, Program<any, E>>;
 	start?: (ctx: Ctx<E>) => Next | Promise<Next>; // the first screen after logon
+	// allow says whether ctx.user may use the panel in state s. Menus decide
+	// what is offered; this decides what is allowed, whatever commarea comes
+	// back. It is asked about the panel a key was pressed on before it
+	// handles the key, and about the next panel before it is drawn. A panel
+	// refused stays on, or goes back to, the screen before with an xxx0002E
+	// message.
+	allow?: (ctx: Ctx<E>, s: PanelState) => boolean | Promise<boolean>;
 	fieldHelp?: FieldHelpLookup<E>; // help for the field the cursor is in on PF1
 	commandLines?: Record<string, string>; // panel -> the name of its command line field, for PF24 RETRIEVE
 	// stateKey returns the secret that signs the commarea. Without one the
@@ -131,6 +138,10 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 	const stateVersion = config.stateVersion ?? 1;
 	const lifetime = config.stateLifetime ?? LIFETIME_S;
 	const event = async (ctx: Ctx<E>, e: SessionEvent) => config.onEvent?.(ctx, e);
+
+	const allowed = async (ctx: Ctx<E>, s: PanelState) => !config.allow || (await config.allow(ctx, s));
+	const refused = (ctx: Ctx<E>) => `${msgId(ctx, "0002E")} NOT AUTHORIZED - ASK YOUR ADMINISTRATOR`;
+	const home = async (ctx: Ctx<E>): Promise<Next> => (config.start ? await config.start(ctx) : { p: "menu" });
 
 	const program = (p: string) => {
 		const prog = programs[p];
@@ -242,6 +253,10 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 				const lost = `${msgId(ctx, "0001W")} SCREEN STATE LOST, EXPIRED OR FROM AN OLDER RELEASE - START OVER`;
 				next = config.start ? await config.start(ctx) : { p: "menu" };
 				if (!isLogoff(next)) next.msg = lost;
+			} else if (!(await allowed(ctx, current))) {
+				next = await home(ctx);
+				before = undefined;
+				if (!isLogoff(next)) next.msg = refused(ctx);
 			} else if (aid === "REDRAW") {
 				next = current;
 			} else if (!aids.has(aid)) {
@@ -277,6 +292,16 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 				} else {
 					next = await program(current.p).handle(ctx, current, inp);
 				}
+			}
+		}
+
+		if (!isLogoff(next) && !(await allowed(ctx, next))) {
+			const back = before && (await allowed(ctx, before)) ? before : await home(ctx);
+			next = !isLogoff(back) && (await allowed(ctx, back)) ? back : { logoff: refused(ctx) };
+			if (!isLogoff(next)) {
+				next.msg = refused(ctx);
+				takeFill(next);
+				takeDownload(next);
 			}
 		}
 

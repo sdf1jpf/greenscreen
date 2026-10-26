@@ -142,6 +142,24 @@ describe("screen engine", () => {
 		expect(texts(await post("johnsmith@b.com", { aid: "ENTER", state: c.state }))).toContain("SCREEN STATE LOST");
 	});
 
+	it("asks allow about the panel shown and the one to show", async () => {
+		let counters = ["ALICE"];
+		const a = app({ allow: (ctx, s) => s.p !== "count" || counters.includes(ctx.user) });
+		const post = async (user: string, body: Record<string, unknown>): Promise<Reply> =>
+			(await a.request("/v1/screen", { method: "POST", body: JSON.stringify({ v: 1, ...body }) }, { DEV_USER: user, STATE_KEY: "k" })).json();
+		const bob = await post("bob", { aid: "START" });
+		const refused = await post("bob", { aid: "ENTER", state: bob.state, fields: { option: "1 5" } });
+		expect(refused.screen.map).toBe("TSTM00");
+		expect(texts(refused)).toContain("TST0002E NOT AUTHORIZED");
+		const alice = await post("alice", { aid: "START" });
+		const c = await post("alice", { aid: "ENTER", state: alice.state, fields: { option: "1 5" } });
+		expect(texts(c)).toContain("COUNT 5");
+		counters = [];
+		const after = await post("alice", { aid: "ENTER", state: c.state, fields: { step: "1" } });
+		expect(after.screen.map).toBe("TSTM00");
+		expect(texts(after)).toContain("TST0002E NOT AUTHORIZED");
+	});
+
 	it("refuses a commarea older than its lifetime", async () => {
 		vi.useFakeTimers({ toFake: ["Date"] });
 		const start = await send({ aid: "START" });
@@ -280,7 +298,7 @@ describe("serviceTokenAuth", () => {
 		const env = { TOKENS: { "Reg-1.access": hash } };
 		const who = (h: Record<string, string>) => a.request("/v1/whoami", { headers: h }, env);
 		const ok = await who({ "CF-Access-Client-Id": "REG-1.access", "CF-Access-Client-Secret": "s3cret" });
-		expect(await ok.json()).toEqual({ user: "REG1", uid: "token:reg-1.access" });
+		expect(await ok.json()).toEqual({ user: "REG1", uid: "reg-1.access" });
 		expect((await who({ "CF-Access-Client-Id": "reg-1.access", "CF-Access-Client-Secret": "wrong" })).status).toBe(401);
 		expect((await who({ "CF-Access-Client-Id": "reg-2.access", "CF-Access-Client-Secret": "s3cret" })).status).toBe(401);
 		expect((await who({})).status).toBe(401);

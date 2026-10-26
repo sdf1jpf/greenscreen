@@ -18,13 +18,13 @@ export interface Claims {
 	aud?: string | string[];
 	exp?: number;
 	nbf?: number;
-	sub?: string; // the user's ID in Access; empty for service tokens
 	email?: string;
 	common_name?: string; // service tokens: the client ID
 }
 
-// Identity is who signed on. id is unique and never changes for a person
-// or a service token, such as the Access sub; userid is the TSO-style name
+// Identity is who signed on. id is unique to a person or a service token:
+// through Access, the email (lower case) or the token's client ID, which is
+// what to name in a list of who may do something. userid is the TSO-style name
 // for screens and SEND, up to eight characters. Two identities can want the
 // same userid (john.smith@ and johnsmith@ both make JOHNSMIT), so with
 // sessions each id gets a userid of its own (see SessionStore.userid).
@@ -102,10 +102,11 @@ export function userIdFor(claims: Claims): string {
 	return id || (claims.email ? "USER" : "SERVICE");
 }
 
-// identityFor is the Identity of an Access JWT's claims: the Access sub
-// (or a service token's client ID), named by userId.
+// identityFor is the Identity of an Access JWT's claims: the email, or a
+// service token's client ID, named by userId.
 function identityFor(claims: Claims, userId: (claims: Claims) => string): Identity {
-	const id = claims.sub || (claims.common_name ? `token:${claims.common_name.toLowerCase()}` : `email:${claims.email?.toLowerCase() ?? ""}`);
+	const id = (claims.email || claims.common_name || "").toLowerCase();
+	if (!id) throw new HttpError(401, "unauthorized", "the Access token names no email or service token");
 	return { id, userid: userId(claims) };
 }
 

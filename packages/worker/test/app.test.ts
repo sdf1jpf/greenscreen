@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	createApp, header, userIdFor, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, serviceTokenAuth, tokenHash, values,
+	accessAuth, createApp, header, userIdFor, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, serviceTokenAuth, tokenHash, values,
 	USER_HEADER, type AccessEnv, type AppConfig, type PanelState, type ScreenJSON,
 } from "../src";
 
@@ -338,3 +338,25 @@ describe("userIdFor", () => {
 		expect(userIdFor({})).toBe("SERVICE");
 	});
 });
+
+describe("accessAuth", () => {
+	it("fetches the Access keys for an unknown kid at most once a minute", async () => {
+		const real = globalThis.fetch;
+		let fetched = 0;
+		globalThis.fetch = (async () => (fetched++, Response.json({ keys: [] }))) as typeof fetch;
+		try {
+			const a = app({ auth: accessAuth() });
+			const b64 = (o: object) => btoa(JSON.stringify(o)).replace(/=+$/, "");
+			const env = { ACCESS_TEAM_DOMAIN: "throttle.cloudflareaccess.com", ACCESS_AUD: "aud", STATE_KEY: "k" };
+			for (let i = 0; i < 5; i++) {
+				const jwt = `${b64({ alg: "RS256", kid: `made-up-${i}` })}.${b64({})}.c2ln`;
+				const res = await a.request("/v1/session", { method: "POST", headers: { "Cf-Access-Jwt-Assertion": jwt } }, env);
+				expect(res.status).toBe(401);
+			}
+			expect(fetched).toBe(1);
+		} finally {
+			globalThis.fetch = real;
+		}
+	});
+});
+

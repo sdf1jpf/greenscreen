@@ -12,6 +12,9 @@ export const ASSERTION_HEADER = "Cf-Access-Jwt-Assertion";
 
 const CLOCK_SKEW_S = 60;
 const KEYS_TTL_MS = 3_600_000;
+// An unknown kid refetches the keys at most this often, so tokens made up
+// by anyone who reaches the Worker can't have it fetch on every request.
+const REFETCH_MS = 60_000;
 
 export interface Claims {
 	iss?: string;
@@ -33,12 +36,14 @@ export interface Identity {
 	userid: string;
 }
 
-// Signing keys per team domain, refetched hourly or when a new kid appears.
+// Signing keys per team domain, refetched hourly, or when a new kid appears
+// and they are more than REFETCH_MS old.
 const keyCache = new Map<string, { keys: Map<string, CryptoKey>; fetched: number }>();
 
 async function signingKey(team: string, kid: string): Promise<CryptoKey | undefined> {
 	let entry = keyCache.get(team);
-	if (!entry || !entry.keys.has(kid) || Date.now() - entry.fetched > KEYS_TTL_MS) {
+	const age = entry ? Date.now() - entry.fetched : Infinity;
+	if (age > KEYS_TTL_MS || (!entry?.keys.has(kid) && age > REFETCH_MS)) {
 		const res = await fetch(`https://${team}/cdn-cgi/access/certs`);
 		if (!res.ok) throw new Error(`fetching Access certs: ${res.status}`);
 		const { keys } = await res.json<{ keys: (JsonWebKey & { kid: string })[] }>();
@@ -52,7 +57,7 @@ async function signingKey(team: string, kid: string): Promise<CryptoKey | undefi
 		entry = { keys: imported, fetched: Date.now() };
 		keyCache.set(team, entry);
 	}
-	return entry.keys.get(kid);
+	return entry?.keys.get(kid);
 }
 
 function b64url(s: string): Uint8Array {

@@ -14,7 +14,8 @@ in [docs/protocol.md](docs/protocol.md).
 | [`@greenscreen/worker`](packages/worker) | The screen engine, builder, ISPF-style menus, PF1 field help, PF24 RETRIEVE, signed commarea and Cloudflare Access logon, as a Hono app. |
 | [Go terminal](cmd/greenscreen) | One binary for every app, run in any terminal: `go install github.com/sdf1jpf/greenscreen/cmd/greenscreen@latest`. The 3270 screen model is importable as [`tn3270`](tn3270). |
 | [`@greenscreen/web`](packages/web) | The same terminal in a browser page, served from the Worker's static assets. |
-| `create-greenscreen` (coming) | A starter app, with a sample point-of-sale app in `examples/`. |
+| [`examples/pos`](examples/pos) | A point-of-sale app: sale entry, tender, receipts, price list, end of day. |
+| `create-greenscreen` (coming) | A starter app. |
 
 ## A panel
 

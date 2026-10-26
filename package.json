@@ -1,10 +1,13 @@
 {
   "name": "greenscreen",
   "private": true,
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm test --workspaces --if-present"
+    "typecheck": "npm run build -w packages/worker && npm run typecheck --workspaces --if-present",
+    "test": "npm run build -w packages/worker && npm test --workspaces --if-present"
   }
 }

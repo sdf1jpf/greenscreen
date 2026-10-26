@@ -127,3 +127,9 @@ body {
 }
 #keys button:hover { border-color: var(--turquoise); }
 #keys button:focus-visible { outline: 1px solid var(--white); }
+
+/* With the key bar hidden only its toggle stays, dim, at the right. */
+.keys-hidden #keys button:not([data-toggle]) { display: none; }
+.keys-hidden #keys { align-self: flex-end; padding: 0 8px 4px; }
+.keys-hidden #keys button { opacity: 0.5; }
+.keys-hidden #keys button:hover { opacity: 1; }

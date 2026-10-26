@@ -445,6 +445,11 @@ function onKey(e) {
 		snapshot(e.shiftKey ? "pdf" : "png");
 		return;
 	}
+	if (k === "Alt+KeyK") {
+		e.preventDefault();
+		toggleKeys();
+		return;
+	}
 	if (k === "Escape" || k === "Ctrl+r") {
 		e.preventDefault();
 		reset();
@@ -525,9 +530,44 @@ function onClick(e) {
 function onKeyBar(e) {
 	const b = e.target.closest("button");
 	if (!b) return;
-	if (b.dataset.aid === "RESET") reset();
+	if (b.dataset.toggle !== undefined) toggleKeys();
+	else if (b.dataset.aid === "RESET") reset();
 	else if (b.dataset.snap) snapshot(b.dataset.snap);
 	else aidKey(b.dataset.aid);
+}
+
+// The key bar can be hidden (its HIDE key, or Alt+K) by operators who use
+// the keyboard; the browser remembers the choice. ?keys=hide or ?keys=show
+// in the URL overrides it, for a kiosk or a register.
+const KEYS_PREF = "greenscreen.keys";
+
+function showKeys(show) {
+	document.documentElement.classList.toggle("keys-hidden", !show);
+	const b = el.keys.querySelector("[data-toggle]");
+	b.textContent = show ? "HIDE" : "KEYS";
+	b.title = show ? "Hide the key bar (Alt+K)" : "Show the key bar (Alt+K)";
+	b.setAttribute("aria-expanded", String(show));
+}
+
+function toggleKeys() {
+	const show = document.documentElement.classList.contains("keys-hidden");
+	showKeys(show);
+	try {
+		localStorage.setItem(KEYS_PREF, show ? "show" : "hide");
+	} catch {
+		// storage blocked: the choice lasts until the page reloads
+	}
+	fit();
+}
+
+function savedKeys() {
+	const fromURL = params.get("keys");
+	if (fromURL === "hide" || fromURL === "show") return fromURL;
+	try {
+		return localStorage.getItem(KEYS_PREF);
+	} catch {
+		return null;
+	}
 }
 
 // --- Start ---------------------------------------------------------------
@@ -563,6 +603,7 @@ async function appInfo() {
 	}
 }
 
+showKeys(savedKeys() !== "hide");
 fit();
 state.started = true;
 appInfo().then(() => send("START"));

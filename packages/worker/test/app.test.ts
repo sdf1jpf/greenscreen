@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	createApp, header, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, serviceTokenAuth, tokenHash, values,
-	USER_HEADER, type AccessEnv, type PanelState, type ScreenJSON,
+	USER_HEADER, type AccessEnv, type AppConfig, type PanelState, type ScreenJSON,
 } from "../src";
 
 // A two-panel app: a menu and a counter that keeps its count in the
@@ -48,7 +48,7 @@ const menu = menuProgram<Env>({
 	},
 });
 
-function app() {
+function app(extra: Partial<AppConfig<Env>> = {}) {
 	return createApp<Env>({
 		app: { title: "TEST SYSTEM", prefix: "TST", system: "SYS9", banner: ["WELCOME"] },
 		programs: { menu, count },
@@ -57,6 +57,7 @@ function app() {
 			step: { title: "STEP", lines: ["How much to add."], values: values(["1", "ONE"], ["5", "FIVE"]) },
 		}),
 		stateKey: (env) => env.STATE_KEY,
+		...extra,
 	});
 }
 
@@ -74,6 +75,10 @@ async function send(body: Record<string, unknown>, env: Env = devEnv): Promise<R
 }
 
 const texts = (r: Reply) => r.screen.fields.map((f) => f.text ?? "").join("|");
+
+afterEach(() => {
+	vi.useRealTimers();
+});
 
 describe("screen engine", () => {
 	it("starts at the menu and titles it with the app", async () => {
@@ -111,6 +116,43 @@ describe("screen engine", () => {
 	it("sends plain JSON without a key", async () => {
 		const r = await send({ aid: "START" }, { DEV_USER: "tester" });
 		expect(JSON.parse(r.state).s.p).toBe("menu");
+	});
+
+	it("refuses a commarea issued to another user", async () => {
+		const alice = { DEV_USER: "alice", STATE_KEY: "secret" };
+		const bob = { DEV_USER: "bob", STATE_KEY: "secret" };
+		const start = await send({ aid: "START" }, alice);
+		const c = await send({ aid: "ENTER", state: start.state, fields: { option: "1 5" } }, alice);
+		expect(texts(c)).toContain("COUNT 5");
+		const got = await send({ aid: "ENTER", state: c.state, fields: { step: "1" } }, bob);
+		expect(got.screen.map).toBe("TSTM00");
+		expect(texts(got)).toContain("TST0001W SCREEN STATE LOST");
+		const own = await send({ aid: "ENTER", state: c.state, fields: { step: "1" } }, alice);
+		expect(texts(own)).toContain("COUNT 6");
+	});
+
+	it("refuses a commarea older than its lifetime", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		const start = await send({ aid: "START" });
+		const c = await send({ aid: "ENTER", state: start.state, fields: { option: "1 5" } });
+		vi.setSystemTime(Date.now() + 29 * 60_000);
+		const fresh = await send({ aid: "ENTER", state: c.state, fields: { step: "100" } });
+		expect(texts(fresh)).toContain("COUNT 105");
+		vi.setSystemTime(Date.now() + 2 * 60_000); // c is 31 minutes old; fresh is 2
+		const old = await send({ aid: "ENTER", state: c.state, fields: { step: "1" } });
+		expect(texts(old)).toContain("TST0001W SCREEN STATE LOST");
+		expect(texts(await send({ aid: "ENTER", state: fresh.state, fields: { step: "1" } }))).toContain("COUNT 106");
+	});
+
+	it("refuses to serve without a signing key outside wrangler dev", async () => {
+		const auth = async () => "TESTER";
+		const res = await app({ auth }).request("/v1/screen", { method: "POST", body: JSON.stringify({ v: 1, aid: "START" }) }, {});
+		expect(res.status).toBe(500);
+		expect(await res.text()).toContain("signing key is not set");
+		const signed = await app({ auth }).request("/v1/screen", { method: "POST", body: JSON.stringify({ v: 1, aid: "START" }) }, { STATE_KEY: "k" });
+		expect(signed.status).toBe(200);
+		const unsigned = await app({ auth, unsigned: true }).request("/v1/screen", { method: "POST", body: JSON.stringify({ v: 1, aid: "START" }) }, {});
+		expect(unsigned.status).toBe(200);
 	});
 
 	it("gives field help with values and puts the pick back", async () => {

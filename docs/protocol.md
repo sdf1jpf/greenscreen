@@ -213,11 +213,17 @@ optional. A client that gets a 404 here falls back to its own defaults.
 ## Commarea
 
 `state` is opaque to clients. A server may sign it (`@greenscreen-dev/worker`
-does when given a `stateKey`: base64url JSON, a dot, an HMAC-SHA256), and
+does with its `stateKey`: base64url JSON, a dot, an HMAC-SHA256), and
 then a state that was changed on the way is treated like a lost one: the
-reply is the first screen with a `xxx0001W` warning. Unsigned states are
-plain JSON, and panels must not trust them for anything the operator
-could not do anyway.
+reply is the first screen with a `xxx0001W` warning. The same goes for a
+state sent back by a different user than the one it was issued to, and for
+one older than the server's lifetime for it (30 minutes by default, the idle
+limit), since each reply carries a fresh one.
+
+`@greenscreen-dev/worker` refuses to serve screens without a `stateKey`,
+except under `wrangler dev` with `DEV_USER` or when the app sets
+`unsigned: true`. Unsigned states are plain JSON, and panels must not trust
+them for anything the operator could not do anyway.
 
 ## Versions
 

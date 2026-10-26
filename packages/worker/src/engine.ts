@@ -61,8 +61,18 @@ export interface ScreenConfig<E = unknown> {
 	start?: (ctx: Ctx<E>) => Next | Promise<Next>; // the first screen after logon
 	fieldHelp?: FieldHelpLookup<E>; // help for the field the cursor is in on PF1
 	commandLines?: Record<string, string>; // panel -> the name of its command line field, for PF24 RETRIEVE
-	stateKey?: (env: E) => string | undefined; // the secret that signs the commarea; unset sends it unsigned
+	// stateKey returns the secret that signs the commarea. Without one the
+	// engine refuses to serve screens, unless unsigned is set or the
+	// request was signed on as DEV_USER (wrangler dev): an unsigned
+	// commarea can be rewritten by the client, totals and all.
+	stateKey?: (env: E) => string | undefined;
+	unsigned?: boolean; // serve an unsigned commarea, for an app whose panels trust nothing in it
 	stateVersion?: number; // bump when a state shape changes so old states can't be read
+	// stateLifetime is how long, in seconds, a commarea can be sent back
+	// before it is treated as lost: by default 30 minutes, the idle limit.
+	// Each reply carries a new one, so it only ends a conversation left that
+	// long. 0 lets them last for ever.
+	stateLifetime?: number;
 	onEvent?: (ctx: Ctx<E>, event: SessionEvent) => void | Promise<void>; // logon, logoff, idle timeout
 	// context adds the app's own things to every panel's ctx, such as its
 	// database: context: (ctx) => ({ db: ctx.env.DB }). A panel declares
@@ -81,6 +91,8 @@ export interface ScreenConfig<E = unknown> {
 }
 
 const HISTORY = 20;
+const LIFETIME_S = 30 * 60;
+const CLOCK_SKEW_S = 60;
 
 const aids = new Set([
 	"ENTER", "CLEAR", "PA1", "PA2", "PA3",
@@ -109,6 +121,7 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 	if (!programs.menu && !config.start) throw new Error('register a "menu" program or give a start screen');
 	const commandLines = config.commandLines ?? (programs.menu ? { menu: "option" } : {});
 	const stateVersion = config.stateVersion ?? 1;
+	const lifetime = config.stateLifetime ?? LIFETIME_S;
 	const event = async (ctx: Ctx<E>, e: SessionEvent) => config.onEvent?.(ctx, e);
 
 	const program = (p: string) => {
@@ -124,8 +137,10 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 		return st.back === undefined || valid(st.back, depth + 1);
 	}
 
-	async function encode(s: PanelState, session: Session, key?: string): Promise<string> {
-		const out: Record<string, unknown> = { sv: stateVersion, s };
+	// The commarea names the user it was issued to and when, so it can't be
+	// sent back by anyone else or, after its lifetime, by anyone at all.
+	async function encode(s: PanelState, session: Session, user: string, key?: string): Promise<string> {
+		const out: Record<string, unknown> = { sv: stateVersion, u: user, i: Math.floor(Date.now() / 1000), s };
 		if (session.sid) out.t = session.sid;
 		if (session.history.length > 0) out.h = session.history;
 		if (session.retrieved !== undefined) out.r = session.retrieved;
@@ -133,13 +148,16 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 	}
 
 	// decode reads a commarea, or returns undefined if it is missing,
-	// damaged, tampered with or from an incompatible release.
-	async function decode(raw: string, key?: string): Promise<{ s: PanelState; session: Session } | undefined> {
+	// damaged, tampered with, from an incompatible release, issued to
+	// another user or too old.
+	async function decode(raw: string, user: string, key?: string): Promise<{ s: PanelState; session: Session } | undefined> {
 		try {
 			const payload = await open(raw, key);
 			if (payload === undefined) return undefined;
-			const { sv, s, h, r, t } = JSON.parse(payload);
-			if (sv !== stateVersion || !valid(s)) return undefined;
+			const { sv, u, i, s, h, r, t } = JSON.parse(payload);
+			if (sv !== stateVersion || u !== user || !valid(s)) return undefined;
+			const now = Date.now() / 1000;
+			if (typeof i !== "number" || i > now + CLOCK_SKEW_S || (lifetime > 0 && i < now - lifetime)) return undefined;
 			const history = Array.isArray(h) ? h.filter((c): c is string => typeof c === "string").slice(0, HISTORY) : [];
 			const retrieved = Number.isInteger(r) && r >= 0 && r < history.length ? (r as number) : undefined;
 			return { s, session: { history, retrieved, sid: typeof t === "string" ? t : undefined } };
@@ -184,12 +202,15 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 		const extra = config.context?.(ctx);
 		if (extra) Object.assign(ctx, extra);
 		const key = config.stateKey?.(env);
+		if (!key && !config.unsigned && !devUser(env)) {
+			throw new HttpError(500, "internal", "the commarea signing key is not set (stateKey, usually the STATE_KEY secret)");
+		}
 		const store = config.sessions?.(env);
 
 		let next: Next;
 		let session: Session = { history: [] };
 		let before: PanelState | undefined; // the screen as it was, to go back to if a lock is refused
-		const got = aid === "START" ? undefined : await decode(str(body, "state"), key);
+		const got = aid === "START" ? undefined : await decode(str(body, "state"), user, key);
 		if (got) session = got.session;
 		ctx.sid = session.sid ?? "";
 		if (aid === "START") {
@@ -208,7 +229,7 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 			const hold = store && held.length > 0 && aid !== "REDRAW" ? await store.hold(ctx.sid, user, ctx.terminal, held) : undefined;
 			if (hold) ctx.sid = hold.sid;
 			if (!current) {
-				const lost = `${msgId(ctx, "0001W")} SCREEN STATE LOST OR FROM AN OLDER RELEASE - START OVER`;
+				const lost = `${msgId(ctx, "0001W")} SCREEN STATE LOST, EXPIRED OR FROM AN OLDER RELEASE - START OVER`;
 				next = config.start ? await config.start(ctx) : { p: "menu" };
 				if (!isLogoff(next)) next.msg = lost;
 			} else if (aid === "REDRAW") {
@@ -277,7 +298,7 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 			}
 			if (sync.message) breakIn(scr, sync.message.from, sync.message.text);
 		}
-		return { v: 1, state: await encode(next, session, key), screen: scr.toJSON(), ...(download ? { download } : {}) };
+		return { v: 1, state: await encode(next, session, user, key), screen: scr.toJSON(), ...(download ? { download } : {}) };
 	};
 }
 
@@ -309,6 +330,13 @@ function input(body: Record<string, unknown>, aid: string): Input {
 	const cursorField = typeof cursor === "object" && cursor !== null && "field" in cursor && typeof cursor.field === "string"
 		? cursor.field : "";
 	return { aid, fields, modified: new Set(modified as string[]), cursorField };
+}
+
+// devUser says the Worker signs everyone on as DEV_USER, under wrangler
+// dev without Access, where an unsigned commarea is allowed for convenience.
+function devUser(env: unknown): boolean {
+	const e = env as { DEV_USER?: unknown; ACCESS_AUD?: unknown } | null;
+	return !!e && !!e.DEV_USER && !e.ACCESS_AUD;
 }
 
 function clamp(n: number, lo: number, hi: number): number {

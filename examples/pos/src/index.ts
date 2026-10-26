@@ -1,8 +1,8 @@
 // A point-of-sale terminal on Greenscreen: ring up a sale, take payment,
 // look up receipts, read the price list and the day's takings. Every
-// screen is a panel in this directory; @greenscreen/worker does the rest.
+// screen is a panel in this directory; @greenscreen-dev/worker does the rest.
 
-import { createApp, helpTable, logoff, menuProgram, values } from "@greenscreen/worker";
+import { createApp, helpTable, logoff, menuProgram, values } from "@greenscreen-dev/worker";
 import { dollars, newSale, store, type Env } from "./common";
 import { eod } from "./eod";
 import { prices } from "./prices";

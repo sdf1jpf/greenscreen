@@ -2,9 +2,9 @@
 	"name": "greenscreen-pos",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-10-01",
-	// The browser terminal, from @greenscreen/web. Files there are served as
+	// The browser terminal, from @greenscreen-dev/web. Files there are served as
 	// assets; /v1/... reaches the Worker.
-	"assets": { "directory": "../../node_modules/@greenscreen/web/public" },
+	"assets": { "directory": "../../node_modules/@greenscreen-dev/web/public" },
 	"d1_databases": [
 		{ "binding": "DB", "database_name": "greenscreen-pos", "database_id": "REPLACE-WITH-YOUR-DATABASE-ID" }
 	]

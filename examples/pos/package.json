@@ -11,8 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@greenscreen/web": "*",
-    "@greenscreen/worker": "*",
+    "@greenscreen-dev/web": "*",
+    "@greenscreen-dev/worker": "*",
     "hono": "^4.13.14"
   },
   "devDependencies": {

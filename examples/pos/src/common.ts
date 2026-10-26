@@ -1,7 +1,7 @@
 // What the panels share: the Worker's bindings, the store, money and the
 // sale arithmetic.
 
-import type { AccessEnv, Ctx, MenuState, PanelState } from "@greenscreen/worker";
+import type { AccessEnv, Ctx, MenuState, PanelState } from "@greenscreen-dev/worker";
 import { D1Store, type Line, type Store } from "./store";
 
 export interface Env extends AccessEnv {

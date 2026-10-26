@@ -7,7 +7,7 @@
 import {
 	createApp, header, helpTable, invalidKey, keys, label, logoff, menuProgram, message, msgId, newScreen, panel, pf,
 	type AccessEnv, type MenuState, type PanelState,
-} from "@greenscreen/worker";
+} from "@greenscreen-dev/worker";
 
 export interface Env extends AccessEnv {
 	STATE_KEY?: string; // signs the commarea

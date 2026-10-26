@@ -1,4 +1,4 @@
-import { header, invalidKey, keys, label, lpad, message, msgId, newScreen, pad, panel, pf, right } from "@greenscreen/worker";
+import { header, invalidKey, keys, label, lpad, message, msgId, newScreen, pad, panel, pf, right } from "@greenscreen-dev/worker";
 import { dollars, listRows, newSale, store, totals, type Env, type SaleState } from "./common";
 
 // POS010 SALE ENTRY: ring up items by SKU. The lines travel in the signed

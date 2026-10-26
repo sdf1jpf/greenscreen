@@ -1,6 +1,6 @@
 {
   "name": "create-greenscreen",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Start a Greenscreen app: 3270-style screens on Cloudflare Workers",
   "type": "module",
   "bin": {

@@ -101,6 +101,12 @@ Worker sends. Give `/v1/screen/info` and `/v1/health` an Access Bypass
 policy so the logon screen can be titled before sign-in; without one the
 terminal uses its defaults. `-h` lists the flags.
 
+A server that Access isn't in front of, such as one on a store's own
+network, can check the same service tokens itself: give `createApp` the
+`auth` `serviceTokenAuth((env) => tokens)`, where `tokens` maps each client
+ID to `await tokenHash(secret)`. A terminal then moves between the two by
+its `-api` URL alone.
+
 ## Releasing
 
 Bump the version in `packages/worker`, `packages/web` and `packages/create`

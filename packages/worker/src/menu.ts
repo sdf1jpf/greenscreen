@@ -1,6 +1,6 @@
-import type { Value } from "./fieldhelp";
-import { header, invalidKey, keys, label, message, newScreen, time, type Ctx } from "./screen";
-import { pf, type MenuState, type Next, type PanelState, type Program } from "./program";
+import type { Value } from "./fieldhelp.js";
+import { header, invalidKey, keys, label, message, newScreen, time, type Ctx } from "./screen.js";
+import { pf, type MenuState, type Next, type PanelState, type Program } from "./program.js";
 
 // The ISPF-style primary option menu and its submenus. An option is picked
 // by its key on the menu shown, by a fast path from the primary menu such

@@ -3,12 +3,12 @@
 // its input fields and the commarea from the last reply; the engine runs
 // the panel the commarea names and answers with the next screen.
 
-import { open, seal } from "./commarea";
-import type { FieldHelpLookup } from "./fieldhelp";
-import { helpProgram } from "./help";
-import { HttpError, int, str } from "./http";
-import { isLogoff, takeFill, withFill, type HelpState, type Input, type Next, type PanelState, type Program } from "./program";
-import { MIN_COLS, MIN_ROWS, msgId, time, type AppInfo, type Ctx, type ScreenJSON } from "./screen";
+import { open, seal } from "./commarea.js";
+import type { FieldHelpLookup } from "./fieldhelp.js";
+import { helpProgram } from "./help.js";
+import { HttpError, int, str } from "./http.js";
+import { isLogoff, takeFill, withFill, type HelpState, type Input, type Next, type PanelState, type Program } from "./program.js";
+import { MIN_COLS, MIN_ROWS, msgId, time, type AppInfo, type Ctx, type ScreenJSON } from "./screen.js";
 
 export const requestKeys = [
 	"v", "aid", "state", "fields", "modified", "cursor", "rows", "cols", "terminal", "system", "tz_offset",

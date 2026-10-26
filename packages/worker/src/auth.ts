@@ -6,7 +6,7 @@
 //
 // https://developers.cloudflare.com/cloudflare-one/identity/authorization-cookie/validating-json/
 
-import { HttpError } from "./http";
+import { HttpError } from "./http.js";
 
 export const ASSERTION_HEADER = "Cf-Access-Jwt-Assertion";
 

@@ -12,8 +12,9 @@ export function create(target) {
 	const name = basename(dir).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "greenscreen-app";
 	const template = join(dirname(fileURLToPath(import.meta.url)), "..", "template");
 	cpSync(template, dir, { recursive: true });
-	// npm leaves .gitignore out of published packages, so it ships as _gitignore.
-	renameSync(join(dir, "_gitignore"), join(dir, ".gitignore"));
+	// npm leaves dotfiles like .gitignore and .npmrc out of published
+	// packages, so they ship with a leading underscore.
+	for (const f of ["gitignore", "npmrc"]) renameSync(join(dir, "_" + f), join(dir, "." + f));
 	const title = name.replace(/-/g, " ").toUpperCase().slice(0, 40);
 	for (const f of ["package.json", "wrangler.jsonc", "README.md", "src/index.ts"]) {
 		const p = join(dir, f);

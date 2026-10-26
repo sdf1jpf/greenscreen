@@ -18,6 +18,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # Apps load the package from node_modules, where Node (and vitest)
+      # need real file extensions on its imports, unlike a bundler.
+      - name: Node can load the built SDK
+        run: node -e "import('./packages/worker/dist/index.js')"
 
   go:
     runs-on: ubuntu-latest

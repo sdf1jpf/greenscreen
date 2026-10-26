@@ -3,8 +3,8 @@
 // values lists them under the help, as ISPF prompts do: S beside one puts
 // it in the field.
 
-import type { Ctx } from "./screen";
-import type { PanelState } from "./program";
+import type { Ctx } from "./screen.js";
+import type { PanelState } from "./program.js";
 
 export interface Value {
 	code: string;

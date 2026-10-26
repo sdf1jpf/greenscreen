@@ -1,6 +1,6 @@
-import { fieldValues, type FieldHelpLookup, type Value } from "./fieldhelp";
-import { header, keys, message, msgId, newScreen, pad, type Ctx } from "./screen";
-import { pf, withFill, type HelpState, type Next, type Program } from "./program";
+import { fieldValues, type FieldHelpLookup, type Value } from "./fieldhelp.js";
+import { header, keys, message, msgId, newScreen, pad, type Ctx } from "./screen.js";
+import { pf, withFill, type HelpState, type Next, type Program } from "./program.js";
 
 // Help. With a field, it explains that field (xxxH01); PF1 there goes on
 // to the keyboard tutorial (xxxH00). Any other key returns to the screen

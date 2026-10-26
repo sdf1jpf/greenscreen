@@ -3,7 +3,7 @@
 // session. A program's state is plain JSON tagged with its panel name in
 // "p", the key it is registered under.
 
-import type { Ctx, Screen } from "./screen";
+import type { Ctx, Screen } from "./screen.js";
 
 // PanelState is what every panel's state has. back is the state to return
 // to, for panels that have one; msg is the message line.

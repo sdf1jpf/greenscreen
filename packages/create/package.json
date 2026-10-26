@@ -1,10 +1,16 @@
 {
   "name": "create-greenscreen",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Start a Greenscreen app: 3270-style screens on Cloudflare Workers",
   "type": "module",
-  "bin": { "create-greenscreen": "bin/create.js" },
-  "files": ["bin", "template", "README.md"],
+  "bin": {
+    "create-greenscreen": "bin/create.js"
+  },
+  "files": [
+    "bin",
+    "template",
+    "README.md"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
@@ -19,5 +25,7 @@
     "url": "git+https://github.com/sdf1jpf/greenscreen.git",
     "directory": "packages/create"
   },
-  "publishConfig": { "access": "public" }
+  "publishConfig": {
+    "access": "public"
+  }
 }

@@ -4,9 +4,9 @@
 // same signedOn middleware.
 
 import { Hono, type Context, type MiddlewareHandler } from "hono";
-import { accessAuth, type AccessEnv, type Auth } from "./auth";
-import { requestKeys, screenHandler, type ScreenConfig } from "./engine";
-import { errorResponse, HttpError, json, readJSON } from "./http";
+import { accessAuth, type AccessEnv, type Auth } from "./auth.js";
+import { requestKeys, screenHandler, type ScreenConfig } from "./engine.js";
+import { errorResponse, HttpError, json, readJSON } from "./http.js";
 
 export type AppEnv<E extends object> = { Bindings: E; Variables: { user: string } };
 

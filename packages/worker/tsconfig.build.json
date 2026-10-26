@@ -4,7 +4,9 @@
     "noEmit": false,
     "declaration": true,
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "module": "nodenext",
+    "moduleResolution": "nodenext"
   },
   "include": ["src"]
 }

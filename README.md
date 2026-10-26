@@ -87,7 +87,8 @@ terminal uses its defaults. `-h` lists the flags.
 ## Releasing
 
 Bump the version in `packages/worker`, `packages/web` and `packages/create`
-(and the template's dependencies), then push a matching tag, e.g. `v0.2.0`.
+(and the template's dependencies), then push a matching tag, e.g. `v0.2.0`,
+or run the Release workflow by hand on main, which tags it once it's published.
 The Release workflow tests and publishes to npm through trusted publishing
 (OIDC), so there is no npm token: each package lists `sdf1jpf/greenscreen`
 and `release.yml` as its trusted publisher on npmjs.com. The Go terminal is released by the same tag: `go install

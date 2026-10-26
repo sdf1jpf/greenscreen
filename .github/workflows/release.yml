@@ -1,7 +1,9 @@
 name: Release
 
-# Push a tag like v0.1.0 to publish @greenscreen-dev/worker, @greenscreen-dev/web
-# and create-greenscreen to npm. The tag must match the packages' version.
+# Publishes @greenscreen-dev/worker, @greenscreen-dev/web and
+# create-greenscreen to npm. Either push a tag like v0.1.0 that matches the
+# packages' version, or run the workflow by hand on main ("Run workflow"),
+# which tags the release itself once it is published.
 # Publishes with npm trusted publishing (OIDC): no token. Each package's
 # settings on npmjs.com name this repo and release.yml as a trusted
 # publisher, and npm adds provenance automatically.
@@ -9,12 +11,13 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # to push the tag on a manual run
       id-token: write
     steps:
       - uses: actions/checkout@v4
@@ -25,12 +28,24 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm install -g npm@latest # trusted publishing needs npm 11.5.1 or later
       - run: npm ci
-      - name: Check the tag matches every package version
+      - name: Check every package has the release's version
         run: |
+          tag=$GITHUB_REF_NAME
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            [ "$GITHUB_REF_NAME" = main ] || { echo "run a manual release from main"; exit 1; }
+            tag=v$(node -p "require('./packages/worker/package.json').version")
+            if git ls-remote --exit-code --tags origin "$tag" >/dev/null; then echo "$tag is already released"; exit 1; fi
+          fi
           for p in packages/worker packages/web packages/create; do
             v=$(node -p "require('./$p/package.json').version")
-            [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "$p is $v, tag is $GITHUB_REF_NAME"; exit 1; }
+            [ "v$v" = "$tag" ] || { echo "$p is $v, release is $tag"; exit 1; }
           done
+          echo "TAG=$tag" >> "$GITHUB_ENV"
       - run: npm run typecheck
       - run: npm test
       - run: npm publish -w packages/worker -w packages/web -w packages/create
+      - name: Tag the release
+        if: github.ref_type != 'tag'
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"

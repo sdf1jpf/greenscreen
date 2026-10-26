@@ -1,5 +1,5 @@
 {
-  "name": "@greenscreen/web",
+  "name": "@greenscreen-dev/web",
   "version": "0.1.0",
   "description": "A 3270 terminal in the browser for Greenscreen applications",
   "type": "module",

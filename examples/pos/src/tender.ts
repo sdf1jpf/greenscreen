@@ -1,4 +1,4 @@
-import { header, invalidKey, keys, label, lpad, message, msgId, newScreen, panel, pf } from "@greenscreen/worker";
+import { header, invalidKey, keys, label, lpad, message, msgId, newScreen, panel, pf } from "@greenscreen-dev/worker";
 import { cents, dollars, store, totals, type Env, type ReceiptState, type TenderState } from "./common";
 import type { Tender } from "./store";
 

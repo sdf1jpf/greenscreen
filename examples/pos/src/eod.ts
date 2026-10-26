@@ -1,4 +1,4 @@
-import { date, header, keys, lpad, newScreen, panel } from "@greenscreen/worker";
+import { date, header, keys, lpad, newScreen, panel } from "@greenscreen-dev/worker";
 import { dollars, store, type Env, type EodState, type PosCtx } from "./common";
 
 // POS060 END OF DAY: today's takings in the terminal's local time, by tender.

@@ -1,4 +1,4 @@
-import { header, keys, lpad, message, msgId, newScreen, pad, panel, pf, stamp } from "@greenscreen/worker";
+import { header, keys, lpad, message, msgId, newScreen, pad, panel, pf, stamp } from "@greenscreen-dev/worker";
 import { dollars, newSale, store, type Env, type ReceiptState, type SaleState } from "./common";
 
 // POS030 RECEIPT: one sale as it would print. Right after a tender, Enter

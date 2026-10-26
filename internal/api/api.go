@@ -1,5 +1,5 @@
 // Package api is the terminal's client for a Greenscreen application, as
-// served by @greenscreen/worker.
+// served by @greenscreen-dev/worker.
 //
 //	GET    /v1/health
 //	GET    /v1/screen/info  what the application calls itself; no logon

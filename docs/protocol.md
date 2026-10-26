@@ -140,7 +140,7 @@ optional. A client that gets a 404 here falls back to its own defaults.
 
 ## Commarea
 
-`state` is opaque to clients. A server may sign it (`@greenscreen/worker`
+`state` is opaque to clients. A server may sign it (`@greenscreen-dev/worker`
 does when given a `stateKey`: base64url JSON, a dot, an HMAC-SHA256), and
 then a state that was changed on the way is treated like a lost one: the
 reply is the first screen with a `xxx0001W` warning. Unsigned states are
@@ -186,7 +186,7 @@ The clients keep a few things to themselves:
 
 ## In the Worker
 
-With `@greenscreen/worker`, each panel is a `Program` with a `render`
+With `@greenscreen-dev/worker`, each panel is a `Program` with a `render`
 (state to screen) and a `handle` (state plus AID and input to the next
 state), registered with `createApp` under the name in its state's `p`.
 The package provides the menu (`menuProgram`), help and field prompts

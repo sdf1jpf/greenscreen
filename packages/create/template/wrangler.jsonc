@@ -4,7 +4,7 @@
 	"compatibility_date": "2026-10-01",
 	// The browser terminal. Files there are served as assets; /v1/... reaches
 	// the Worker.
-	"assets": { "directory": "node_modules/@greenscreen/web/public" }
+	"assets": { "directory": "node_modules/@greenscreen-dev/web/public" }
 	// Before deploying: wrangler secret put STATE_KEY (any long random string),
 	// then put the Worker behind Cloudflare Access and set ACCESS_TEAM_DOMAIN
 	// and ACCESS_AUD. Give /v1/screen/info and /v1/health a Bypass policy.

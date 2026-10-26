@@ -1,4 +1,4 @@
-# @greenscreen/worker
+# @greenscreen-dev/worker
 
 Serve 3270-style green screens from a Cloudflare Worker. Panels are
 pseudo-conversational programs: `render` turns a state into a screen,
@@ -10,7 +10,7 @@ session.
 npm create greenscreen@latest my-app
 ```
 
-or add it to a Worker: `npm install @greenscreen/worker hono`.
+or add it to a Worker: `npm install @greenscreen-dev/worker hono`.
 
 See the [repository](https://github.com/sdf1jpf/greenscreen) for a tour,
 the point-of-sale example and the screen protocol.

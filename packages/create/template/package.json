@@ -9,8 +9,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@greenscreen/web": "^0.1.0",
-    "@greenscreen/worker": "^0.1.0",
+    "@greenscreen-dev/web": "^0.1.0",
+    "@greenscreen-dev/worker": "^0.1.0",
     "hono": "^4.13.14"
   },
   "devDependencies": {

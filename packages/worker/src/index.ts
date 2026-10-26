@@ -1,4 +1,4 @@
-// @greenscreen/worker: serve 3270-style screens from a Cloudflare Worker.
+// @greenscreen-dev/worker: serve 3270-style screens from a Cloudflare Worker.
 // See docs/protocol.md for the wire format and README.md for a tour.
 
 export { createApp, signedOn, user, type AppConfig, type AppEnv } from "./app";

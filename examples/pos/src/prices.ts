@@ -1,4 +1,4 @@
-import { header, invalidKey, keys, lpad, message, newScreen, pad, panel, pf } from "@greenscreen/worker";
+import { header, invalidKey, keys, lpad, message, newScreen, pad, panel, pf } from "@greenscreen-dev/worker";
 import { dollars, listRows, store, type Env, type PricesState } from "./common";
 
 // POS050 PRICE LIST: every product, by SKU.

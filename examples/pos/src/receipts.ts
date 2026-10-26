@@ -1,4 +1,4 @@
-import { clock, header, invalidKey, keys, lpad, message, msgId, newScreen, pad, panel, pf } from "@greenscreen/worker";
+import { clock, header, invalidKey, keys, lpad, message, msgId, newScreen, pad, panel, pf } from "@greenscreen-dev/worker";
 import { dollars, listRows, store, type Env, type ReceiptState, type ReceiptsState } from "./common";
 
 // POS040 RECEIPTS: the latest sales, newest first. S beside one shows it.

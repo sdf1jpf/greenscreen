@@ -1,0 +1,30 @@
+{
+  "name": "@greenscreen/worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Serve 3270-style screens from a Cloudflare Worker",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "hono": "^4.13.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261025.1",
+    "hono": "^4.13.14",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}

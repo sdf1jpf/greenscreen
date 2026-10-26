@@ -265,6 +265,12 @@ func writeNew(dir, name string, b []byte) (string, error) {
 func (s *Session) start() *t3.Screen {
 	s.logon, s.state = nil, ""
 	resp, err := s.api().Screen(s.ctx(), s.request("START", nil))
+	if err == nil && resp.Logoff != nil {
+		// The application turned the user away (not on its user file, say):
+		// say why on the logon screen.
+		s.api().Logoff(s.ctx())
+		return s.toLogon(resp.Logoff.Message)
+	}
 	if err == nil && resp.Screen == nil {
 		err = errors.New("no screen in the host's reply")
 	}

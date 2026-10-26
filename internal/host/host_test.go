@@ -212,6 +212,15 @@ func TestLogoffFromTheApplication(t *testing.T) {
 	}
 }
 
+func TestLogoffAtStart(t *testing.T) {
+	s, f, scr := newSession(t)
+	f.logoff = true
+	s.Submit(t3.AIDEnter, scr)
+	if s.logon == nil || !strings.HasPrefix(s.logon.msg, "IKJ56470I") || f.loggedOn {
+		t.Fatalf("expected the application's logoff message on the logon screen, got %+v", s.logon)
+	}
+}
+
 func TestRedraw(t *testing.T) {
 	s, f, _ := newSession(t)
 	if scr := s.Redraw(40, 132); scr.Rows() != 40 || len(f.reqs) != 0 {

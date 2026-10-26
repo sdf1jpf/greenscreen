@@ -30,10 +30,10 @@ export const tutorialKeys: [string, string][] = [
 ];
 
 export function helpProgram<E>(lookup: FieldHelpLookup<E>, tutorial = tutorialKeys): Program<HelpState, E> {
-	const fieldHelp = (h: HelpState) => (h.field ? lookup(h.back, h.field) : undefined);
+	const fieldHelp = async (ctx: Ctx<E>, h: HelpState) => (h.field ? lookup(h.back, h.field, ctx) : undefined);
 	return {
 		async render(ctx, h) {
-			const fh = fieldHelp(h);
+			const fh = await fieldHelp(ctx, h);
 			if (fh) {
 				const scr = newScreen(ctx, ctx.app.prefix + "H01");
 				header(scr, ctx, "HELP - " + fh.title);
@@ -84,7 +84,7 @@ export function helpProgram<E>(lookup: FieldHelpLookup<E>, tutorial = tutorialKe
 		async handle(ctx, h, input) {
 			h.msg = h.errSel = undefined;
 			if (h.field && input.aid === pf(1)) return { p: "help", back: h.back, vals: h.vals } satisfies HelpState;
-			const fh = fieldHelp(h);
+			const fh = await fieldHelp(ctx, h);
 			const values = fh ? await fieldValues(ctx, fh, h.back) : [];
 			if (fh && h.field && values.length > 0) {
 				const rows = listRows(ctx, fh.lines.length);

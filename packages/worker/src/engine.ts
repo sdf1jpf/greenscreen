@@ -7,11 +7,14 @@ import { open, seal } from "./commarea.js";
 import type { FieldHelpLookup } from "./fieldhelp.js";
 import { helpProgram } from "./help.js";
 import { HttpError, int, str } from "./http.js";
-import { isLogoff, takeFill, withFill, type HelpState, type Input, type Next, type PanelState, type Program } from "./program.js";
-import { MIN_COLS, MIN_ROWS, msgId, time, type AppInfo, type Ctx, type ScreenJSON } from "./screen.js";
+import {
+	isLogoff, takeDownload, takeFill, withFill,
+	type Download, type HelpState, type Input, type Next, type PanelState, type Program,
+} from "./program.js";
+import { breakIn, MAX_COLS, MAX_ROWS, MIN_COLS, MIN_ROWS, msgId, time, type AppInfo, type Ctx, type ScreenJSON } from "./screen.js";
 
 export const requestKeys = [
-	"v", "aid", "state", "fields", "modified", "cursor", "rows", "cols", "terminal", "system", "tz_offset",
+	"v", "aid", "state", "fields", "modified", "cursor", "rows", "cols", "terminal", "system", "tz_offset", "live",
 ] as const;
 
 // SessionEvent is something worth a line in a system log.
@@ -19,6 +22,35 @@ export type SessionEvent =
 	| { kind: "logon"; text: string }
 	| { kind: "logoff"; text: string }
 	| { kind: "timeout"; text: string };
+
+// Holder is a session holding a record for update.
+export interface Holder {
+	resource: string; // e.g. "CUSTOMER 000101"
+	user: string;
+	terminal: string;
+	sid?: string;
+	since?: string; // RFC 3339
+}
+
+// SessionStore keeps who is signed on, the records they hold and the
+// messages waiting for them. The Sessions Durable Object in
+// "@greenscreen-dev/worker/sessions" is one; its stub fits as is.
+export interface SessionStore {
+	// logon starts a session and returns its id.
+	logon(user: string, terminal: string): string | Promise<string>;
+	// logoff ends a session and releases its locks.
+	logoff(sid: string, user: string): void | Promise<void>;
+	// hold makes sure the session still holds want before a panel acts on
+	// them, taking any that lapsed. lost is another session that has one now.
+	hold(sid: string, user: string, terminal: string, want: string[]): HoldResult | Promise<HoldResult>;
+	// sync records the panel the session shows and makes it hold exactly
+	// want. conflict is another session holding one of them, and then
+	// nothing changed. message is one waiting for the user, now delivered.
+	sync(sid: string, user: string, terminal: string, map: string, want: string[]): SyncResult | Promise<SyncResult>;
+}
+
+export interface HoldResult { sid: string; lost?: Holder | null }
+export interface SyncResult { sid: string; conflict?: Holder | null; message?: { from: string; text: string } | null }
 
 export interface ScreenConfig<E = unknown> {
 	app: AppInfo;
@@ -32,11 +64,23 @@ export interface ScreenConfig<E = unknown> {
 	stateKey?: (env: E) => string | undefined; // the secret that signs the commarea; unset sends it unsigned
 	stateVersion?: number; // bump when a state shape changes so old states can't be read
 	onEvent?: (ctx: Ctx<E>, event: SessionEvent) => void | Promise<void>; // logon, logoff, idle timeout
+	// context adds the app's own things to every panel's ctx, such as its
+	// database: context: (ctx) => ({ db: ctx.env.DB }). A panel declares
+	// them in its own Ctx type.
+	context?: (ctx: Ctx<E>) => object | void;
+	// commands runs a command typed on any command line before the panel
+	// sees it, the way a TSO command works from any panel. It returns the
+	// message to show on the same screen, or undefined to leave the command
+	// to the panel.
+	commands?: (ctx: Ctx<E>, cmd: string, s: PanelState) => string | undefined | Promise<string | undefined>;
+	// sessions turns on TSO-style sessions: a session id in the commarea,
+	// record locks named by panels (Program.locks), and messages from other
+	// users breaking in on the message line. Returning undefined runs
+	// without them, as when a binding is missing in tests.
+	sessions?: (env: E) => SessionStore | undefined;
 }
 
 const HISTORY = 20;
-const MAX_ROWS = 200;
-const MAX_COLS = 400;
 
 const aids = new Set([
 	"ENTER", "CLEAR", "PA1", "PA2", "PA3",
@@ -44,12 +88,13 @@ const aids = new Set([
 ]);
 
 export type ScreenResponse =
-	| { v: 1; state: string; screen: ScreenJSON }
+	| { v: 1; state: string; screen: ScreenJSON; download?: Download }
 	| { v: 1; logoff: { message: string } };
 
 // Session is what the commarea carries for the whole conversation rather
 // than for one panel.
 interface Session {
+	sid?: string; // the session in the app's SessionStore
 	history: string[]; // commands entered, newest first
 	retrieved?: number; // the history entry PF24 last put back
 }
@@ -81,6 +126,7 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 
 	async function encode(s: PanelState, session: Session, key?: string): Promise<string> {
 		const out: Record<string, unknown> = { sv: stateVersion, s };
+		if (session.sid) out.t = session.sid;
 		if (session.history.length > 0) out.h = session.history;
 		if (session.retrieved !== undefined) out.r = session.retrieved;
 		return seal(JSON.stringify(out), key);
@@ -92,15 +138,32 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 		try {
 			const payload = await open(raw, key);
 			if (payload === undefined) return undefined;
-			const { sv, s, h, r } = JSON.parse(payload);
+			const { sv, s, h, r, t } = JSON.parse(payload);
 			if (sv !== stateVersion || !valid(s)) return undefined;
 			const history = Array.isArray(h) ? h.filter((c): c is string => typeof c === "string").slice(0, HISTORY) : [];
 			const retrieved = Number.isInteger(r) && r >= 0 && r < history.length ? (r as number) : undefined;
-			return { s, session: { history, retrieved } };
+			return { s, session: { history, retrieved, sid: typeof t === "string" ? t : undefined } };
 		} catch {
 			return undefined;
 		}
 	}
+
+	// locksOf lists the records held for update by s and the panels under
+	// it, such as a record being changed under the help panel opened from it.
+	const locksOf = (s: PanelState): string[] => {
+		const out: string[] = [];
+		for (let st: PanelState | undefined = s; st; st = st.back) out.push(...(program(st.p).locks?.(st) ?? []));
+		return out;
+	};
+
+	// unlock returns the screen that held lost locks, without them.
+	const unlock = (s: PanelState): PanelState => {
+		for (let st: PanelState | undefined = s; st; st = st.back) {
+			const p = program(st.p);
+			if (p.locks?.(st).length && p.unlocked) return p.unlocked(st);
+		}
+		return s;
+	};
 
 	return async (env, user, url, body) => {
 		if (body.v !== 1) throw bad('"v" must be 1');
@@ -115,12 +178,22 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 			terminal: str(body, "terminal") || "TERM0001",
 			host: url.host,
 			tzOffset: clamp(int(body, "tz_offset"), -14 * 60, 14 * 60),
+			sid: "",
+			live: body.live === true,
 		};
+		const extra = config.context?.(ctx);
+		if (extra) Object.assign(ctx, extra);
 		const key = config.stateKey?.(env);
+		const store = config.sessions?.(env);
 
 		let next: Next;
 		let session: Session = { history: [] };
+		let before: PanelState | undefined; // the screen as it was, to go back to if a lock is refused
+		const got = aid === "START" ? undefined : await decode(str(body, "state"), key);
+		if (got) session = got.session;
+		ctx.sid = session.sid ?? "";
 		if (aid === "START") {
+			if (store) ctx.sid = await store.logon(user, ctx.terminal);
 			const msg = `IKJ56455I ${user} LOGON IN PROGRESS AT ${time(ctx)}`;
 			next = config.start ? await config.start(ctx) : { p: "menu", msg };
 			await event(ctx, { kind: "logon", text: `IKJ56455I ${user} LOGON IN PROGRESS ON ${ctx.terminal}` });
@@ -128,10 +201,12 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 			await event(ctx, { kind: "timeout", text: `IEF450I ${user} TSO - ABEND=S522 - IDLE TIME LIMIT EXCEEDED ON ${ctx.terminal}` });
 			next = { logoff: `IKJ56470I ${user} LOGGED OFF AT ${time(ctx)} - SESSION IDLE TOO LONG (S522)` };
 		} else {
-			const got = await decode(str(body, "state"), key);
 			const current = got?.s;
-			if (got) session = got.session;
 			const cmdField = current ? commandLines[current.p] : undefined;
+			before = current && structuredClone(current);
+			const held = store && current ? locksOf(current) : [];
+			const hold = store && held.length > 0 && aid !== "REDRAW" ? await store.hold(ctx.sid, user, ctx.terminal, held) : undefined;
+			if (hold) ctx.sid = hold.sid;
 			if (!current) {
 				const lost = `${msgId(ctx, "0001W")} SCREEN STATE LOST OR FROM AN OLDER RELEASE - START OVER`;
 				next = config.start ? await config.start(ctx) : { p: "menu" };
@@ -140,14 +215,21 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 				next = current;
 			} else if (!aids.has(aid)) {
 				throw bad(`unknown aid "${aid}"`);
-			} else if (aid === "PF1" && current.p !== "help" && !config.programs.help) {
+			} else if (hold?.lost) {
+				// The session ended with a record held and someone else has it
+				// now: what was typed cannot be saved.
+				const l = hold.lost;
+				next = unlock(current);
+				before = undefined;
+				next.msg = `${msgId(ctx, "1202E")} LOCK LOST TO ${l.user} ON ${l.terminal} - ${l.resource} NOT CHANGED`;
+			} else if (aid === "PF1" && current.p !== "help") {
 				// PF1 is help on every screen: for the field the cursor is in if
 				// it has any, otherwise the tutorial. What the operator typed is
 				// kept for when they come back.
 				const inp = input(body, aid);
 				const vals = Object.fromEntries([...inp.modified].filter((n) => n in inp.fields).map((n) => [n, inp.fields[n]]));
 				const h: HelpState = { p: "help", back: current, ...(Object.keys(vals).length ? { vals } : {}) };
-				next = config.fieldHelp?.(current, inp.cursorField) ? { ...h, field: inp.cursorField } : h;
+				next = (await config.fieldHelp?.(current, inp.cursorField, ctx)) ? { ...h, field: inp.cursorField } : h;
 			} else if (aid === "PF24" && cmdField) {
 				next = retrieve(ctx, current, cmdField, session);
 			} else {
@@ -157,18 +239,45 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 				if (aid === "ENTER" && cmdField && cmd) {
 					session.history = [cmd, ...session.history.filter((c) => c !== cmd)].slice(0, HISTORY);
 				}
-				next = await program(current.p).handle(ctx, current, inp);
+				const said = aid === "ENTER" && cmdField && cmd && config.commands ? await config.commands(ctx, cmd, current) : undefined;
+				if (said !== undefined) {
+					next = current;
+					next.msg = said;
+				} else {
+					next = await program(current.p).handle(ctx, current, inp);
+				}
 			}
 		}
 
 		if (isLogoff(next)) {
+			if (store && ctx.sid) await store.logoff(ctx.sid, user);
 			await event(ctx, { kind: "logoff", text: `IKJ56470I ${user} LOGGED OFF ${ctx.terminal}` });
 			return { v: 1, logoff: { message: next.logoff } };
 		}
 		const fill = takeFill(next);
-		const scr = await program(next.p).render(ctx, next);
+		let download = takeDownload(next);
+		let scr = await program(next.p).render(ctx, next);
 		if (fill) scr.fill(fill.fields, fill.cursor);
-		return { v: 1, state: await encode(next, session, key), screen: scr.toJSON() };
+
+		if (store) {
+			// Take the locks the new screen needs and release the rest. If
+			// another session has one, stay on the screen as it was.
+			const sync = await store.sync(ctx.sid, user, ctx.terminal, scr.map, locksOf(next));
+			session.sid = ctx.sid = sync.sid;
+			if (sync.conflict) {
+				const h = sync.conflict;
+				const back: Next = before ?? (config.start ? await config.start(ctx) : { p: "menu" });
+				if (isLogoff(back)) return { v: 1, logoff: { message: back.logoff } };
+				next = back;
+				next.msg = `${msgId(ctx, "1201E")} RECORD IN USE BY ${h.user} ON ${h.terminal} - ${h.resource}`;
+				takeFill(next);
+				takeDownload(next);
+				scr = await program(next.p).render(ctx, next);
+				download = undefined;
+			}
+			if (sync.message) breakIn(scr, sync.message.from, sync.message.text);
+		}
+		return { v: 1, state: await encode(next, session, key), screen: scr.toJSON(), ...(download ? { download } : {}) };
 	};
 }
 

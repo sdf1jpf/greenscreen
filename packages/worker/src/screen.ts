@@ -4,6 +4,8 @@
 
 export const MIN_ROWS = 24;
 export const MIN_COLS = 80;
+export const MAX_ROWS = 200;
+export const MAX_COLS = 400;
 
 export type Color = "default" | "blue" | "red" | "pink" | "green" | "turquoise" | "yellow" | "white";
 export type Highlight = "none" | "underscore" | "reverse" | "blink";
@@ -36,6 +38,7 @@ export interface AppInfo {
 	prefix: string; // three letters that start the framework's message IDs, e.g. "POS"
 	system: string; // the system name when the client sends none
 	banner?: string[]; // lines for the clients' logon screen
+	tagline?: string; // under the banner on the logon screen, instead of the title
 }
 
 // Ctx is what a panel knows about the request it is answering. E is the
@@ -50,6 +53,8 @@ export interface Ctx<E = unknown> {
 	terminal: string;
 	host: string; // the API's host, for display
 	tzOffset: number; // minutes east of UTC
+	sid: string; // the session, when the app has sessions (ScreenConfig.sessions); "" otherwise
+	live: boolean; // the client is listening on GET /v1/live
 }
 
 export class Screen {
@@ -171,6 +176,14 @@ export function message(scr: Screen, msg: string): void {
 	const id = msg.split(" ")[0];
 	const color: Color = id.endsWith("E") ? "red" : id.endsWith("W") ? "yellow" : "white";
 	scr.text(scr.rows - 1, 2, msg.slice(0, scr.cols - 2), { color, bright: true });
+}
+
+// breakIn puts a message another user sent on the message line, in place
+// of the panel's own, the way TSO breaks in on a screen.
+export function breakIn(scr: Screen, from: string, text: string): void {
+	const row = scr.rows - 1;
+	scr.fields.splice(0, scr.fields.length, ...scr.fields.filter((f) => f.row !== row));
+	scr.text(row, 2, `${text}  FROM ${from}`.slice(0, scr.cols - 2), { color: "white", bright: true, highlight: "reverse" });
 }
 
 // keys draws the PF key legend on the last row.

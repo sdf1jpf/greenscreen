@@ -58,6 +58,7 @@ type SnapshotTaker interface {
 type Config struct {
 	SystemName  string // e.g. "SYS1"
 	Title       string // the application's name on the logon screen, e.g. "POINT OF SALE"
+	Tagline     string // shown there instead of the title, if set
 	Prefix      string // starts the terminal's own message IDs, e.g. "POS"; default "GSC"
 	Banner      []string
 	Backend     Backend

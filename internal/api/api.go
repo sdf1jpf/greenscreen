@@ -160,6 +160,7 @@ type AppInfo struct {
 	System   string   `json:"system"`
 	Prefix   string   `json:"prefix"`
 	Banner   []string `json:"banner"`
+	Tagline  string   `json:"tagline"`  // under the banner instead of the title
 	Live     bool     `json:"live"`     // serves GET /v1/live
 	Snapshot bool     `json:"snapshot"` // serves POST /v1/snapshot
 }

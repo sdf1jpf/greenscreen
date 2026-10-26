@@ -35,9 +35,13 @@ func (l *logon) Render(s *Session) *t3.Screen {
 	for i, line := range banner[:min(len(banner), 5)] {
 		scr.Text(dy+3+i, (scr.Cols()-len(line))/2+1, line, t3.WithColor(t3.Blue), t3.Bright)
 	}
-	tag := spaced(s.cfg.Title)
+	line := s.cfg.Tagline
+	if line == "" {
+		line = s.cfg.Title
+	}
+	tag := spaced(line)
 	if tag == "" || len(tag) > scr.Cols()-2 {
-		tag = s.cfg.Title
+		tag = line
 	}
 	if tag != "" {
 		scr.Text(dy+9, (scr.Cols()-len(tag))/2+1, tag, t3.WithColor(t3.Turquoise))

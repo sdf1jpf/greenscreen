@@ -18,7 +18,10 @@ export interface FieldHelp<E = unknown> {
 }
 
 // FieldHelpLookup returns the help for a field on the panel s shows, if any.
-export type FieldHelpLookup<E = unknown> = (s: PanelState, field: string) => FieldHelp<E> | undefined;
+// It may look in storage, such as help text the operators can change.
+export type FieldHelpLookup<E = unknown> = (
+	s: PanelState, field: string, ctx: Ctx<E>,
+) => FieldHelp<E> | undefined | Promise<FieldHelp<E> | undefined>;
 
 // values builds a list of valid values from code, description pairs.
 export const values = (...pairs: [string, string][]): Value[] => pairs.map(([code, desc]) => ({ code, desc }));

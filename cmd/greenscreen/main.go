@@ -41,7 +41,7 @@ func main() {
 	// screen says so when Enter is pressed.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	if info, err := client.Info(ctx); err == nil {
-		cfg.Title, cfg.Prefix, cfg.Banner = info.Title, info.Prefix, info.Banner
+		cfg.Title, cfg.Prefix, cfg.Banner, cfg.Tagline = info.Title, info.Prefix, info.Banner, info.Tagline
 		cfg.Live, cfg.Snapshots = info.Live, info.Snapshot
 		if cfg.SystemName == "" {
 			cfg.SystemName = info.System

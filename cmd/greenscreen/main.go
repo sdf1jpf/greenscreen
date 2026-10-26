@@ -8,6 +8,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -35,7 +36,12 @@ func main() {
 	)
 	flag.Parse()
 
-	client := api.NewClient(*apiURL, access(*apiURL))
+	acc := access(*apiURL)
+	if acc != nil && !private(*apiURL) {
+		fmt.Fprintf(os.Stderr, "greenscreen: %s is plain HTTP: use https:// so the Access credentials aren't sent in the clear\n", *apiURL)
+		os.Exit(2)
+	}
+	client := api.NewClient(*apiURL, acc)
 	cfg := &host.Config{SystemName: *sysName, Backend: client, DownloadDir: *prints}
 	// The application names itself. If it can't be reached yet, the logon
 	// screen says so when Enter is pressed; if Access keeps it from us until
@@ -66,13 +72,25 @@ func access(apiURL string) api.Access {
 	if id, secret := os.Getenv("CF_ACCESS_CLIENT_ID"), os.Getenv("CF_ACCESS_CLIENT_SECRET"); id != "" && secret != "" {
 		return api.ServiceToken{ID: id, Secret: secret}
 	}
-	if u, err := url.Parse(apiURL); err == nil {
-		switch u.Hostname() {
-		case "localhost", "127.0.0.1", "::1":
-			return nil
-		}
+	if u, err := url.Parse(apiURL); err == nil && loopback(u.Hostname()) {
+		return nil
 	}
 	return api.Cloudflared{App: apiURL}
+}
+
+// private says credentials sent to apiURL can't be read on the way: it is
+// HTTPS, or it is on this machine.
+func private(apiURL string) bool {
+	u, err := url.Parse(apiURL)
+	return err == nil && (u.Scheme == "https" || loopback(u.Hostname()))
+}
+
+func loopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // defaultPrintDir is ~/terminal-prints, or the current directory if there

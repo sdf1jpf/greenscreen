@@ -105,7 +105,8 @@ A server that Access isn't in front of, such as one on a store's own
 network, can check the same service tokens itself: give `createApp` the
 `auth` `serviceTokenAuth((env) => tokens)`, where `tokens` maps each client
 ID to `await tokenHash(secret)`. A terminal then moves between the two by
-its `-api` URL alone.
+its `-api` URL alone. Serve it over HTTPS: the terminal won't send its
+token over plain HTTP to anything but this machine.
 
 A userid is TSO-style, eight characters from the email or client ID, so
 two people can want the same one (`john.smith@` and `johnsmith@` are both

@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./sessions": {
+      "types": "./dist/sessions.d.ts",
+      "default": "./dist/sessions.js"
     }
   },
   "files": [

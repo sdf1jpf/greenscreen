@@ -42,6 +42,14 @@ export type Next = PanelState | Logoff;
 export interface Program<S extends PanelState = PanelState, E = unknown> {
 	render(ctx: Ctx<E>, s: S): Screen | Promise<Screen>;
 	handle(ctx: Ctx<E>, s: S, input: Input): Next | Promise<Next>;
+	// locks names the records the panel holds for update while it shows,
+	// such as "CUSTOMER 000101", when the app has sessions (see
+	// ScreenConfig.sessions). They are held for as long as the panel, or one
+	// opened over it like help, is showing.
+	locks?(s: S): string[];
+	// unlocked is the panel without its locks, for when they were lost to
+	// another session: an inquiry instead of an update, say.
+	unlocked?(s: S): PanelState;
 }
 
 // panel types a program's state without repeating it: panel<SaleState>({...}).
@@ -69,6 +77,27 @@ export function takeFill(s: PanelState): Fill | undefined {
 	const fill = st.fill;
 	delete st.fill;
 	return fill;
+}
+
+// Download hands the operator a file along with the next screen: the client
+// fetches url (an API path, signed on the same way) and saves or opens it
+// as name. Like a fill, it travels on the state for one screen only.
+export interface Download {
+	url: string;
+	name: string;
+}
+
+export function withDownload<S extends PanelState>(s: S, d: Download): S {
+	(s as S & { download?: Download }).download = d;
+	return s;
+}
+
+// takeDownload removes the download from a state and returns it.
+export function takeDownload(s: PanelState): Download | undefined {
+	const st = s as PanelState & { download?: Download };
+	const d = st.download;
+	delete st.download;
+	return d;
 }
 
 export function pf(n: number): string {

@@ -108,4 +108,22 @@ describe("point of sale", () => {
 		const info = await (await app.request("/v1/screen/info", {}, {} as Env)).json();
 		expect(info).toMatchObject({ title: "POINT OF SALE", prefix: "POS", system: "POS1" });
 	});
+
+	it("changes a price from the price list", async () => {
+		const t = terminal();
+		await t.key("START");
+		let r = await t.key("ENTER", { option: "PRICES" });
+		expect(r.screen.map).toBe("POS050");
+		r = await t.key("ENTER", { "sel:2001": "X" });
+		expect(text(r)).toContain("POS0502E");
+		r = await t.key("ENTER", { "sel:2001": "C" });
+		expect(r.screen.map).toBe("POS051");
+		expect(text(r)).toContain("BAGEL, PLAIN");
+		r = await t.key("ENTER", { price: "abc" });
+		expect(text(r)).toContain("POS0511E");
+		r = await t.key("ENTER", { price: "2.25" });
+		expect(r.screen.map).toBe("POS050");
+		expect(text(r)).toContain("POS0510I 2001 NOW 2.25");
+		expect(text(r)).toContain("2.25");
+	});
 });

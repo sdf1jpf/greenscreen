@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	createApp, header, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, values,
-	type AccessEnv, type PanelState, type ScreenJSON,
+	USER_HEADER, type AccessEnv, type PanelState, type ScreenJSON,
 } from "../src";
 
 // A two-panel app: a menu and a counter that keeps its count in the
@@ -161,13 +161,51 @@ describe("app routes", () => {
 		const a = app();
 		expect((await a.request("/v1/health", {}, {})).status).toBe(200);
 		const info = await (await a.request("/v1/screen/info", {}, {})).json();
-		expect(info).toEqual({ v: 1, title: "TEST SYSTEM", system: "SYS9", prefix: "TST", banner: ["WELCOME"] });
+		expect(info).toEqual({ v: 1, title: "TEST SYSTEM", system: "SYS9", prefix: "TST", banner: ["WELCOME"], live: false, snapshot: false });
 	});
 
 	it("needs Access when it is configured", async () => {
 		const res = await app().request("/v1/screen", { method: "POST", body: "{}" },
 			{ ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.test", ACCESS_AUD: "aud" });
 		expect(res.status).toBe(401);
+	});
+
+	it("serves live and snapshots when the app has them", async () => {
+		const seen: string[] = [];
+		const drawn: string[] = [];
+		const a = createApp<Env>({
+			app: { title: "T", prefix: "TST", system: "S" },
+			programs: { menu },
+			live: () => ({ fetch: async (req) => (seen.push(req.headers.get(USER_HEADER) ?? ""), new Response("ws")) }),
+			snapshot: {
+				browser: () => ({
+					quickAction: async (action: string, opts: { html: string }) => (drawn.push(action), new Response(opts.html.includes("HELLO") ? "PNG" : "?")),
+				}) as unknown as BrowserRun,
+			},
+		});
+		expect(await (await a.request("/v1/screen/info", {}, {})).json()).toMatchObject({ live: true, snapshot: true });
+
+		expect((await a.request("/v1/live", {}, devEnv)).status).toBe(426);
+		const ws = await a.request("/v1/live", { headers: { Upgrade: "websocket" } }, devEnv);
+		expect(await ws.text()).toBe("ws");
+		expect(seen).toEqual(["TESTER"]);
+
+		const snap = await a.request("/v1/snapshot", {
+			method: "POST",
+			body: JSON.stringify({ format: "png", map: "tstm00", screen: { rows: 24, cols: 80, fields: [{ row: 1, col: 2, text: "HELLO" }] } }),
+		}, devEnv);
+		expect(snap.status).toBe(200);
+		expect(snap.headers.get("Content-Type")).toBe("image/png");
+		expect(snap.headers.get("Content-Disposition")).toMatch(/filename="TSTM00-\d{12}\.png"/);
+		expect(await snap.text()).toBe("PNG");
+		expect(drawn).toEqual(["screenshot"]);
+		const bad = await a.request("/v1/snapshot", { method: "POST", body: JSON.stringify({ format: "gif", screen: {} }) }, devEnv);
+		expect(bad.status).toBe(400);
+	});
+
+	it("leaves live and snapshots out when the app has neither", async () => {
+		expect((await app().request("/v1/live", { headers: { Upgrade: "websocket" } }, devEnv)).status).toBe(404);
+		expect((await app().request("/v1/snapshot", { method: "POST", body: "{}" }, devEnv)).status).toBe(404);
 	});
 
 	it("lets the app add signed-on routes", async () => {

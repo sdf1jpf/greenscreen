@@ -70,6 +70,23 @@ app.get("/v1/sales/:id", app.signedOn, (c) => ...);
 export default app;
 ```
 
+## Optional pieces
+
+`createApp` takes more when the app wants them:
+
+| Option | What it adds |
+| --- | --- |
+| `sessions` | TSO sessions: record locks named by panels (`locks`), and messages breaking in on the message line. Use the `Sessions` Durable Object from `@greenscreen-dev/worker/sessions`. |
+| `live` | `GET /v1/live`, so the terminals redraw on pushes instead of polling. The `Sessions` object serves it too; subclass it and override `watch`, or call `notify`, to push your own events. |
+| `commands` | A command any command line takes. `sendCommand` gives you TSO's SEND. |
+| `snapshot` | `POST /v1/snapshot`: Ctrl+S in the terminals saves a PNG or PDF of the screen, drawn by Browser Rendering. |
+| `context` | Your own things on every panel's `ctx`, such as `{ db: ctx.env.DB }`. |
+
+A panel sends the operator a file with `withDownload(s, { url, name })`; the
+terminals fetch it from your API and save it. The POS example uses
+sessions, live, SEND and snapshots: `src/worker.ts` exports the Durable
+Object, and the price change panel locks the product it changes.
+
 ## The terminal
 
 ```sh

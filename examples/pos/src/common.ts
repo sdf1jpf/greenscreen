@@ -2,10 +2,13 @@
 // sale arithmetic.
 
 import type { AccessEnv, Ctx, MenuState, PanelState } from "@greenscreen-dev/worker";
+import type { Sessions } from "@greenscreen-dev/worker/sessions";
 import { D1Store, type Line, type Store } from "./store";
 
 export interface Env extends AccessEnv {
 	DB: D1Database;
+	SESSIONS?: DurableObjectNamespace<Sessions>; // who is signed on, price locks, SEND (worker.ts)
+	BROWSER?: BrowserRun; // Browser Rendering, for screen snapshots
 	STATE_KEY?: string; // signs the commarea, so a sale's lines and prices can be trusted
 	STORE?: Store; // tests put a MemoryStore here
 }
@@ -28,7 +31,8 @@ export function newSale(back: MenuState, msg?: string): SaleState {
 export interface TenderState extends PanelState { p: "tender"; back: SaleState; errField?: string }
 export interface ReceiptState extends PanelState { p: "receipt"; back: PanelState; id: number; next?: boolean } // next: Enter starts a new sale
 export interface ReceiptsState extends PanelState { p: "receipts"; back: MenuState; top?: number; ids?: number[]; errSel?: string }
-export interface PricesState extends PanelState { p: "prices"; back: MenuState; top?: number }
+export interface PricesState extends PanelState { p: "prices"; back: MenuState; top?: number; skus?: string[]; errSel?: string }
+export interface PriceState extends PanelState { p: "price"; back: PricesState; sku: string; errField?: string }
 export interface EodState extends PanelState { p: "eod"; back: MenuState }
 
 // dollars formats cents: 1234 -> "12.34", -5 -> "-0.05".

@@ -255,10 +255,36 @@ The clients keep a few things to themselves:
   app's `onEvent` hook). The Go client's `-idle` flag changes the limit; 0 turns
   it off.
 
+## Sessions, locks and messages
+
+An app can keep TSO-style sessions (`sessions` in `createApp`, usually the
+Sessions Durable Object from `@greenscreen-dev/worker/sessions`). The
+commarea then carries a session id (TSU00042) given out at `START`, and a
+session ends after 30 minutes without a request, as the idle limit does.
+
+- **Record locks.** A panel that changes a record names it as a lock, such
+  as `PRODUCT 2001`, and holds it for as long as it, or a panel opened over
+  it like help, is showing. Another session that tries gets `xxx1201E
+  RECORD IN USE BY JFRANK ON TERM0002 - PRODUCT 2001` and stays where it
+  was; so does the same user on a second terminal. Leaving the panel,
+  logging off or timing out releases it. If a session's lock lapsed and
+  someone else took it, the next key gets `xxx1202E LOCK LOST TO ...` and
+  the panel without its lock.
+- **SEND.** With `sendCommand` as the app's `commands`, any command line
+  takes TSO's SEND: `SEND 'LUNCH AT NOON?' USER(JFRANK)`, `USER(A,B)`,
+  `USER(*)` for everyone signed on, `LOGON` to keep it for a user who is
+  not, and no `USER` for the operator, if the app has one. The receiver
+  sees it on the message line of their next screen, with the sender's
+  userid, and a client on `GET /v1/live` gets a `message` event at once.
+
 ## In the Worker
 
 With `@greenscreen-dev/worker`, each panel is a `Program` with a `render`
 (state to screen) and a `handle` (state plus AID and input to the next
 state), registered with `createApp` under the name in its state's `p`.
 The package provides the menu (`menuProgram`), help and field prompts
-(`helpTable`), PF24 RETRIEVE, the idle timeout and the commarea.
+(`helpTable`), PF24 RETRIEVE, the idle timeout and the commarea. A panel
+sends a file with `withDownload`, and names its record locks in `locks`.
+`createApp` also takes `context` (the app's own things on every `ctx`),
+`commands` (a command any command line takes, such as `sendCommand`),
+`sessions`, `live` and `snapshot`.

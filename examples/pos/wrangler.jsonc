@@ -1,13 +1,18 @@
 {
 	"name": "greenscreen-pos",
-	"main": "src/index.ts",
+	"main": "src/worker.ts",
 	"compatibility_date": "2026-10-01",
 	// The browser terminal, from @greenscreen-dev/web. Files there are served as
 	// assets; /v1/... reaches the Worker.
 	"assets": { "directory": "../../node_modules/@greenscreen-dev/web/public" },
 	"d1_databases": [
 		{ "binding": "DB", "database_name": "greenscreen-pos", "database_id": "REPLACE-WITH-YOUR-DATABASE-ID" }
-	]
+	],
+	// Who is signed on, price locks, SEND and the live channel.
+	"durable_objects": { "bindings": [{ "name": "SESSIONS", "class_name": "Sessions" }] },
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Sessions"] }],
+	// Browser Rendering draws screen snapshots (Ctrl+S in the terminals).
+	"browser": { "binding": "BROWSER" }
 	// Secrets: wrangler secret put STATE_KEY, and set ACCESS_TEAM_DOMAIN and
 	// ACCESS_AUD once the Worker is behind Cloudflare Access.
 }

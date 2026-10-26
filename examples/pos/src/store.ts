@@ -36,6 +36,7 @@ export interface Store {
 	sale(id: number): Promise<Sale | undefined>;
 	sales(limit: number): Promise<Sale[]>; // newest first, without lines
 	summary(from: string, to: string): Promise<DaySummary>; // sales at or after from and before to
+	setPrice(sku: string, price: number): Promise<void>;
 }
 
 function emptySummary(): DaySummary {
@@ -51,6 +52,10 @@ export class D1Store implements Store {
 
 	async products() {
 		return (await this.db.prepare("SELECT sku, descr AS \"desc\", price FROM products ORDER BY sku").all<Product>()).results;
+	}
+
+	async setPrice(sku: string, price: number) {
+		await this.db.prepare("UPDATE products SET price = ? WHERE sku = ?").bind(price, sku).run();
 	}
 
 	async recordSale(s: NewSale) {
@@ -109,6 +114,11 @@ export class MemoryStore implements Store {
 
 	async products() {
 		return [...this.catalog].sort((a, b) => a.sku.localeCompare(b.sku));
+	}
+
+	async setPrice(sku: string, price: number) {
+		const p = this.catalog.find((x) => x.sku === sku);
+		if (p) p.price = price;
 	}
 
 	async recordSale(s: NewSale) {

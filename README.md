@@ -12,7 +12,7 @@ in [docs/protocol.md](docs/protocol.md).
 | Package | What it is |
 | --- | --- |
 | [`@greenscreen/worker`](packages/worker) | The screen engine, builder, ISPF-style menus, PF1 field help, PF24 RETRIEVE, signed commarea and Cloudflare Access logon, as a Hono app. |
-| Go terminal (coming) | One binary for every app, run in any terminal. |
+| [Go terminal](cmd/greenscreen) | One binary for every app, run in any terminal: `go install github.com/sdf1jpf/greenscreen/cmd/greenscreen@latest`. The 3270 screen model is importable as [`tn3270`](tn3270). |
 | `@greenscreen/web` (coming) | The same terminal in a browser. |
 | `create-greenscreen` (coming) | A starter app, with a sample point-of-sale app in `examples/`. |
 
@@ -69,9 +69,24 @@ app.get("/v1/sales/:id", app.signedOn, (c) => ...);
 export default app;
 ```
 
+## The terminal
+
+```sh
+greenscreen -api https://pos.example.com
+```
+
+It asks the application for its name, system and logon banner
+(`GET /v1/screen/info`), signs on through Cloudflare Access with
+`cloudflared` (or a service token in `CF_ACCESS_CLIENT_ID` and
+`CF_ACCESS_CLIENT_SECRET`), and from then on draws whatever screens the
+Worker sends. Give `/v1/screen/info` and `/v1/health` an Access Bypass
+policy so the logon screen can be titled before sign-in; without one the
+terminal uses its defaults. `-h` lists the flags.
+
 ## Developing
 
 ```sh
 npm install
 npm test
+go test ./...
 ```

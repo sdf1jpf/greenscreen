@@ -5,7 +5,10 @@
 import { Lock, MIN_COLS, MIN_ROWS, Screen } from "./screen.js";
 import { decodeScreen, encodeRequest, encodeSnapshot } from "./protocol.js";
 
-const LU_NAME = (new URLSearchParams(location.search).get("lu") ?? "WEBTERM1").toUpperCase().slice(0, 8);
+const params = new URLSearchParams(location.search);
+const LU_NAME = (params.get("lu") ?? "WEBTERM1").toUpperCase().slice(0, 8);
+// ?glow turns on the CRT look: phosphor glow and scan lines (terminal.css).
+if (params.has("glow")) document.documentElement.classList.add("glow");
 const IDLE_MS = 30 * 60 * 1000; // log off after this long without a key, as TSO does
 const BASE_FONT_PX = 16;
 const MIN_FONT_PX = 6;

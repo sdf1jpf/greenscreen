@@ -20,7 +20,7 @@ Requests for files in `public/` are answered from assets; everything else
 with the Access cookie, and an expired session reloads to sign on again.
 
 The page titles itself from `GET /v1/screen/info` and shows the app's system
-name in the status line. Add `?lu=TILL01` to the URL to name the terminal.
+name in the status line. Add `?lu=TILL01` to the URL to name the terminal. Add `?glow` for the CRT look, phosphor glow and scan lines; the default is crisp text.
 
 `public/protocol.js` and `public/screen.js` have no DOM dependencies and can
 be imported on their own (`@greenscreen-dev/web/protocol.js`, `/screen.js`).

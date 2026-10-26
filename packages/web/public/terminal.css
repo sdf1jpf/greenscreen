@@ -1,5 +1,6 @@
-/* A 3279 color display: black glass, phosphor colors with a slight glow,
-   faint scan lines. The palette matches the Go client's. */
+/* A 3279 color display: black glass and crisp phosphor colors. The palette
+   matches the Go client's. The CRT look (glow and scan lines) is opt-in:
+   add ?glow to the page's URL. */
 :root {
 	--font-px: 16px;
 	--blue: #5f8fff;
@@ -36,8 +37,8 @@ body {
 	padding: 8px;
 }
 
-/* Scan lines over the glass. */
-#tube::after {
+/* Scan lines over the glass, with ?glow. */
+.glow #tube::after {
 	content: "";
 	position: absolute;
 	inset: 0;
@@ -59,9 +60,9 @@ body {
 /* The rule between the screen and the operator information area. */
 #oia {
 	border-top: 1px solid var(--blue);
-	box-shadow: 0 -1px 4px -2px var(--blue);
 	user-select: none;
 }
+.glow #oia { box-shadow: 0 -1px 4px -2px var(--blue); }
 
 #probe {
 	position: absolute;
@@ -77,8 +78,8 @@ body {
 .c-yellow { --fg: var(--yellow); }
 .c-white { --fg: var(--white); }
 
-#screen span, #oia span {
-	color: var(--fg);
+#screen span, #oia span { color: var(--fg); }
+.glow #screen span, .glow #oia span {
 	text-shadow: 0 0 2px var(--fg), 0 0 6px color-mix(in srgb, var(--fg) 45%, transparent);
 }
 

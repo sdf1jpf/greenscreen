@@ -1,6 +1,6 @@
 {
   "name": "@greenscreen-dev/web",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A 3270 terminal in the browser for Greenscreen applications",
   "type": "module",
   "files": [

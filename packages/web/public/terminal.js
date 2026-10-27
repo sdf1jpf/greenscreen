@@ -4,6 +4,7 @@
 
 import { Lock, MIN_COLS, MIN_ROWS, Screen } from "./screen.js";
 import { decodeScreen, encodeRequest, encodeSnapshot } from "./protocol.js";
+import { PLACEHOLDER, typed } from "./softkeys.js";
 
 const params = new URLSearchParams(location.search);
 const LU_NAME = (params.get("lu") ?? "WEBTERM1").toUpperCase().slice(0, 8);
@@ -21,6 +22,8 @@ const el = {
 	oia: document.getElementById("oia"),
 	keys: document.getElementById("keys"),
 	probe: document.getElementById("probe"),
+	announce: document.getElementById("announce"),
+	softkeys: document.getElementById("softkeys"),
 };
 
 const state = {
@@ -362,6 +365,19 @@ function render() {
 	}
 	el.screen.innerHTML = html;
 	el.oia.innerHTML = oia();
+	announce();
+}
+
+// announce tells a screen reader about a new screen or message: the
+// heading line and the message line, or the terminal's own message. The
+// screen itself is redrawn on every key, so it is not a live region.
+let announced = "";
+function announce() {
+	const s = state.scr;
+	const text = [s.rowText(1), state.message || s.rowText(s.rows - 1)].map((t) => t.trim().replace(/ {2,}/g, "  ")).filter(Boolean).join(". ");
+	if (text === announced) return;
+	announced = text;
+	el.announce.textContent = text;
 }
 
 // oia draws the operator information area, keeping the right-hand indicators
@@ -519,6 +535,7 @@ function onPaste(e) {
 
 // A click moves the cursor, as with a light pen or an emulator's mouse.
 function onClick(e) {
+	if (touched) e.preventDefault(); // keep the on-screen keyboard's box focused
 	if (state.lock !== Lock.NONE) return;
 	const r = el.screen.getBoundingClientRect();
 	const cw = r.width / state.scr.cols;
@@ -528,6 +545,41 @@ function onClick(e) {
 	if (row < 0 || row >= state.scr.rows || col < 0 || col >= state.scr.cols) return;
 	state.scr.moveTo(row * state.scr.cols + col);
 	render();
+}
+
+// A touch screen's on-screen keyboard types into a hidden box (see
+// softkeys.js), which a tap on the screen focuses. Keys it reports as
+// keydowns (Enter, often Backspace) go through onKey as usual.
+let touched = false;
+let composing = false;
+
+function resetSoftkeys() {
+	el.softkeys.value = PLACEHOLDER;
+	el.softkeys.setSelectionRange(PLACEHOLDER.length, PLACEHOLDER.length);
+}
+
+function onSoftInput() {
+	const { text, backspaces } = typed(el.softkeys.value);
+	resetSoftkeys();
+	if (!state.started) return;
+	state.active = Date.now();
+	for (let i = 0; i < backspaces && state.lock === Lock.NONE; i++) state.lock = state.scr.backspace();
+	for (const ch of text) {
+		if (ch === "\n") {
+			render();
+			aidKey("ENTER");
+			return;
+		}
+		if (state.lock !== Lock.NONE) break;
+		state.lock = state.scr.type(ch, state.insert);
+	}
+	render();
+}
+
+function showSoftkeys() {
+	if (!touched) return;
+	resetSoftkeys();
+	el.softkeys.focus({ preventScroll: true });
 }
 
 // The key bar under the screen, for touch screens and browsers that keep
@@ -583,6 +635,16 @@ for (const ev of ["keydown", "mousedown", "touchstart"]) {
 document.addEventListener("keydown", onKey);
 document.addEventListener("paste", onPaste);
 el.screen.addEventListener("mousedown", onClick);
+// pointerup, not click: the tap redraws the screen under the finger, which
+// can cost it its click, and a touch's pointerup may still open a keyboard.
+el.tube.addEventListener("pointerdown", (e) => (touched = e.pointerType !== "mouse"));
+el.tube.addEventListener("pointerup", showSoftkeys);
+el.softkeys.addEventListener("compositionstart", () => (composing = true));
+el.softkeys.addEventListener("compositionend", () => {
+	composing = false;
+	onSoftInput();
+});
+el.softkeys.addEventListener("input", () => composing || onSoftInput());
 el.keys.addEventListener("click", onKeyBar);
 el.keys.addEventListener("mousedown", (e) => e.preventDefault()); // keep keys out of focus
 let resizeTimer;

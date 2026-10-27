@@ -22,6 +22,10 @@ with the Access cookie, and an expired session reloads to sign on again.
 The page titles itself from `GET /v1/screen/info` and shows the app's system
 name in the status line. Add `?lu=TILL01` to the URL to name the terminal. Add `?glow` for the CRT look, phosphor glow and scan lines; the default is crisp text.
 
+On a phone or tablet, tap the screen to bring up the on-screen keyboard:
+the tap also moves the cursor there, and the key bar gives the AID keys.
+A screen reader hears each new screen's heading and message line.
+
 The key bar's HIDE key (or Alt+K) folds it away to a single KEYS key that
 brings it back; the browser remembers the choice. Add `?keys=hide` or
 `?keys=show` to the URL to set it regardless, for a register or a kiosk.

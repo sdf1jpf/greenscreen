@@ -79,7 +79,7 @@ async function send(aid) {
 		schedule(live.open && next.live ? Math.max(next.refresh, LIVE_FALLBACK_S) : next.refresh);
 		connectLive();
 		if (next.download) save(next.download);
-			} catch (e) {
+	} catch (e) {
 		console.error(e);
 		hostMessage("HOST NOT RESPONDING - PRESS ENTER TO RETRY", () => send(state.lastAid));
 		return;
@@ -610,6 +610,9 @@ async function appInfo() {
 
 showKeys(savedKeys() !== "hide");
 fit();
+// The cells were measured in a fallback font if IBM Plex Mono was still
+// loading: measure again once it is in.
+document.fonts?.ready.then(fit);
 state.started = true;
 appInfo().then(() => send("START"));
 setInterval(idleCheck, 30_000);

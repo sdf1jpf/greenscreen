@@ -37,27 +37,43 @@ export interface Identity {
 }
 
 // Signing keys per team domain, refetched hourly, or when a new kid appears
-// and they are more than REFETCH_MS old.
+// and they are more than REFETCH_MS old. Requests that need a fetch at the
+// same time share it, and if it fails the keys already fetched still serve.
 const keyCache = new Map<string, { keys: Map<string, CryptoKey>; fetched: number }>();
+const fetching = new Map<string, Promise<void>>();
 
 async function signingKey(team: string, kid: string): Promise<CryptoKey | undefined> {
-	let entry = keyCache.get(team);
+	const entry = keyCache.get(team);
 	const age = entry ? Date.now() - entry.fetched : Infinity;
 	if (age > KEYS_TTL_MS || (!entry?.keys.has(kid) && age > REFETCH_MS)) {
-		const res = await fetch(`https://${team}/cdn-cgi/access/certs`);
-		if (!res.ok) throw new Error(`fetching Access certs: ${res.status}`);
-		const { keys } = await res.json<{ keys: (JsonWebKey & { kid: string })[] }>();
-		const imported = new Map<string, CryptoKey>();
-		for (const jwk of keys) {
-			imported.set(
-				jwk.kid,
-				await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]),
-			);
+		let pending = fetching.get(team);
+		if (!pending) {
+			pending = fetchKeys(team).finally(() => fetching.delete(team));
+			fetching.set(team, pending);
 		}
-		entry = { keys: imported, fetched: Date.now() };
-		keyCache.set(team, entry);
+		try {
+			await pending;
+		} catch (e) {
+			if (!entry) throw e;
+			console.error(e); // keep using the keys from before, and try again in a minute
+			entry.fetched = Math.max(entry.fetched, Date.now() - KEYS_TTL_MS + REFETCH_MS);
+		}
 	}
-	return entry?.keys.get(kid);
+	return keyCache.get(team)?.keys.get(kid);
+}
+
+async function fetchKeys(team: string): Promise<void> {
+	const res = await fetch(`https://${team}/cdn-cgi/access/certs`);
+	if (!res.ok) throw new Error(`fetching Access certs: ${res.status}`);
+	const { keys } = await res.json<{ keys: (JsonWebKey & { kid: string })[] }>();
+	const imported = new Map<string, CryptoKey>();
+	for (const jwk of keys) {
+		imported.set(
+			jwk.kid,
+			await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]),
+		);
+	}
+	keyCache.set(team, { keys: imported, fetched: Date.now() });
 }
 
 function b64url(s: string): Uint8Array {
@@ -76,9 +92,11 @@ async function verify(team: string, aud: string, jwt: string): Promise<Claims | 
 	if (parts.length !== 3) return undefined;
 	let header: { alg?: string; kid?: string };
 	let claims: Claims;
+	let sig: Uint8Array;
 	try {
 		header = decode(parts[0]);
 		claims = decode(parts[1]);
+		sig = b64url(parts[2]);
 	} catch {
 		return undefined;
 	}
@@ -86,7 +104,7 @@ async function verify(team: string, aud: string, jwt: string): Promise<Claims | 
 	const key = await signingKey(team, header.kid);
 	if (!key) return undefined;
 	const signed = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
-	if (!(await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, b64url(parts[2]), signed))) return undefined;
+	if (!(await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, sig, signed))) return undefined;
 
 	const now = Date.now() / 1000;
 	const auds = Array.isArray(claims.aud) ? claims.aud : [claims.aud];

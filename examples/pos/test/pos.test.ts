@@ -10,8 +10,8 @@ const catalog = [
 
 type Reply = { state: string; screen: { map: string; fields: { text?: string; name?: string; value?: string }[] } };
 
-function terminal(user = "cashier1") {
-	const env = { DEV_USER: user, MANAGERS: "boss@example.com, cashier1", STATE_KEY: "test-key", STORE: new MemoryStore(catalog) } as unknown as Env;
+function terminal(user = "cashier1", products = catalog) {
+	const env = { DEV_USER: user, MANAGERS: "boss@example.com, cashier1", STATE_KEY: "test-key", STORE: new MemoryStore(products) } as unknown as Env;
 	let state = "";
 	async function key(aid: string, fields: Record<string, string> = {}, cursor = ""): Promise<Reply> {
 		const res = await app.request("/v1/screen", {
@@ -125,6 +125,17 @@ describe("point of sale", () => {
 		expect(r.screen.map).toBe("POS050");
 		expect(text(r)).toContain("POS0510I 2001 NOW 2.25");
 		expect(text(r)).toContain("2.25");
+	});
+
+	it("scrolls the price list back up after paging past its end", async () => {
+		const many = Array.from({ length: 20 }, (_, i) => ({ sku: String(1000 + i), desc: `ITEM ${i}`, price: 100 }));
+		const t = terminal("cashier1", many);
+		await t.key("START");
+		const first = (r: Reply) => r.screen.fields.find((f) => f.name?.startsWith("sel:"))?.name;
+		expect(first(await t.key("ENTER", { option: "PRICES" }))).toBe("sel:1000");
+		expect(first(await t.key("PF8"))).toBe("sel:1004"); // 16 rows fit: the last page
+		expect(first(await t.key("PF8"))).toBe("sel:1004");
+		expect(first(await t.key("PF7"))).toBe("sel:1000");
 	});
 
 	it("lets only managers change prices", async () => {

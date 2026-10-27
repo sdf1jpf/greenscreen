@@ -12,7 +12,7 @@ export const receipts = panel<ReceiptsState, Env>({
 		header(scr, ctx, "RECEIPTS");
 		const sales = await store(ctx).sales(LIMIT);
 		const rows = listRows(ctx, FIRST);
-		const top = Math.min(s.top ?? 0, Math.max(sales.length - rows, 0));
+		const top = (s.top = Math.min(s.top ?? 0, Math.max(sales.length - rows, 0)));
 		const shown = sales.slice(top, top + rows);
 		s.ids = shown.map((x) => x.id);
 

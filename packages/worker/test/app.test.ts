@@ -326,6 +326,18 @@ describe("app routes", () => {
 		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user"), uid: c.get("uid") }));
 		expect(await (await a.request("/v1/whoami", {}, devEnv)).json()).toEqual({ user: "TESTER", uid: "TESTER" });
 	});
+
+	it("asks the session store for each identity's userid once", async () => {
+		const asked: string[] = [];
+		const store = {
+			logon: () => "TSU1", logoff: () => {}, hold: (sid: string) => ({ sid }), sync: (sid: string) => ({ sid }),
+			userid: (id: string, want: string) => (asked.push(id), want + "2"),
+		};
+		const a = app({ sessions: () => store });
+		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user") }));
+		for (let i = 0; i < 3; i++) expect(await (await a.request("/v1/whoami", {}, devEnv)).json()).toEqual({ user: "TESTER2" });
+		expect(asked).toEqual(["TESTER"]);
+	});
 });
 
 describe("serviceTokenAuth", () => {
@@ -376,5 +388,67 @@ describe("accessAuth", () => {
 			globalThis.fetch = real;
 		}
 	});
+
+	it("refuses a signature that is not base64 as unsigned, not as an error", async () => {
+		const real = globalThis.fetch;
+		const { jwk, sign } = await signer("kid-1");
+		globalThis.fetch = (async () => Response.json({ keys: [jwk] })) as typeof fetch;
+		try {
+			const env = { ACCESS_TEAM_DOMAIN: "badsig.cloudflareaccess.com", ACCESS_AUD: "aud", STATE_KEY: "k" };
+			const good = await sign(claims(env));
+			const res = await app({ auth: accessAuth() }).request("/v1/session", {
+				method: "POST", headers: { "Cf-Access-Jwt-Assertion": good.replace(/\.[^.]*$/, ".!!!") },
+			}, env);
+			expect(res.status).toBe(401);
+		} finally {
+			globalThis.fetch = real;
+		}
+	});
+
+	it("keeps the keys it has when fetching them again fails", async () => {
+		const real = globalThis.fetch;
+		vi.useFakeTimers({ toFake: ["Date"] });
+		const { jwk, sign } = await signer("kid-1");
+		let up = true;
+		let fetched = 0;
+		globalThis.fetch = (async () => (fetched++, up ? Response.json({ keys: [jwk] }) : new Response("down", { status: 502 }))) as typeof fetch;
+		try {
+			const a = app({ auth: accessAuth() });
+			const env = { ACCESS_TEAM_DOMAIN: "stale.cloudflareaccess.com", ACCESS_AUD: "aud", STATE_KEY: "k" };
+			const logon = async () => (await a.request("/v1/session", {
+				method: "POST", headers: { "Cf-Access-Jwt-Assertion": await sign(claims(env)) },
+			}, env)).status;
+			expect(await logon()).toBe(201);
+			up = false;
+			vi.setSystemTime(Date.now() + 2 * 3_600_000);
+			expect(await logon()).toBe(201);
+			expect(await logon()).toBe(201);
+			expect(fetched).toBe(2); // the failed fetch is not tried again at once
+		} finally {
+			globalThis.fetch = real;
+		}
+	});
 });
+
+// claims are an Access user's, current, for env's application.
+function claims(env: { ACCESS_TEAM_DOMAIN: string; ACCESS_AUD: string }) {
+	const now = Math.floor(Date.now() / 1000);
+	return { iss: `https://${env.ACCESS_TEAM_DOMAIN}`, aud: [env.ACCESS_AUD], exp: now + 300, email: "ada@example.com" };
+}
+
+// signer makes an RS256 key pair the way Access publishes them.
+async function signer(kid: string) {
+	const pair = (await crypto.subtle.generateKey(
+		{ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"],
+	)) as CryptoKeyPair;
+	const jwk = { ...(await crypto.subtle.exportKey("jwk", pair.publicKey)) as JsonWebKey, kid };
+	const b64 = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+	const part = (o: object) => b64(new TextEncoder().encode(JSON.stringify(o)));
+	const sign = async (body: object) => {
+		const head = `${part({ alg: "RS256", kid })}.${part(body)}`;
+		const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", pair.privateKey, new TextEncoder().encode(head));
+		return `${head}.${b64(new Uint8Array(sig))}`;
+	};
+	return { jwk, sign };
+}
 

@@ -40,6 +40,11 @@ jobs:
             v=$(node -p "require('./$p/package.json').version")
             [ "v$v" = "$tag" ] || { echo "$p is $v, release is $tag"; exit 1; }
           done
+          # New apps must get this release: ^0.3.0 never reaches 0.4.0.
+          for d in @greenscreen-dev/worker @greenscreen-dev/web; do
+            r=$(node -p "require('./packages/create/template/package.json').dependencies['$d']")
+            [ "$r" = "^${tag#v}" ] || { echo "the template wants $d $r, release is $tag"; exit 1; }
+          done
           echo "TAG=$tag" >> "$GITHUB_ENV"
       - run: npm run typecheck
       - run: npm test

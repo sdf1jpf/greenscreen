@@ -11,7 +11,7 @@ export const prices = panel<PricesState, Env>({
 		header(scr, ctx, "PRICE LIST");
 		const products = await store(ctx).products();
 		const rows = listRows(ctx, FIRST);
-		const top = Math.min(s.top ?? 0, Math.max(products.length - rows, 0));
+		const top = (s.top = Math.min(s.top ?? 0, Math.max(products.length - rows, 0)));
 		const shown = products.slice(top, top + rows);
 		s.skus = shown.map((p) => p.sku);
 		scr.text(4, 2, "S  SKU          DESCRIPTION                     PRICE", { color: "white", bright: true });

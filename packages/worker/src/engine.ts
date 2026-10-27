@@ -219,6 +219,7 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 		if (body.v !== 1) throw bad('"v" must be 1');
 		const user = who.userid;
 		const aid = str(body, "aid");
+		if (!aids.has(aid) && aid !== "START" && aid !== "TIMEOUT" && aid !== "REDRAW") throw bad(`unknown aid "${aid}"`);
 		const ctx: Ctx<E> = {
 			env,
 			app: config.app,
@@ -272,8 +273,6 @@ export function screenHandler<E>(config: ScreenConfig<E>): ScreenHandler<E> {
 				if (!isLogoff(next)) next.msg = refused(ctx);
 			} else if (aid === "REDRAW") {
 				next = current;
-			} else if (!aids.has(aid)) {
-				throw bad(`unknown aid "${aid}"`);
 			} else if (hold?.lost) {
 				// The session ended with a record held and someone else has it
 				// now: what was typed cannot be saved.

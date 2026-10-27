@@ -31,6 +31,7 @@ const state = {
 	lock: Lock.NONE,
 	insert: false,
 	system: "SYS1", // the application's system name, from /v1/screen/info
+	prefix: "GSC", // starts the terminal's own message IDs, from /v1/screen/info
 	features: { live: false, snapshot: false }, // what the application serves, from /v1/screen/info
 	commarea: null, // the host's opaque state, handed back with every AID
 	map: "", // the screen's map name, for naming snapshots
@@ -62,10 +63,14 @@ async function send(aid) {
 		// Cloudflare Access answers an expired session with a redirect to its
 		// sign-in page, which a fetch cannot follow. Reload to sign in again.
 		if (res.type === "opaqueredirect" || res.status === 401) {
-			hostMessage("SESSION EXPIRED - PRESS ENTER TO SIGN ON AGAIN", () => location.reload());
+			hostMessage("IKJ56400I SESSION EXPIRED - PRESS ENTER TO SIGN ON AGAIN", () => location.reload(), "PRESS ENTER");
 			return;
 		}
-		if (!res.ok) throw new Error(`HTTP ${res.status}`);
+		if (!res.ok) {
+			// The Worker says what was wrong; it is no use to say the host is down.
+			hostMessage(`${msgId("0299E")} ${await errorText(res)}`, () => send(state.lastAid), "PRESS ENTER TO RETRY");
+			return;
+		}
 		const next = decodeScreen(await res.json());
 		if (next.logoff !== undefined) {
 			loggedOff(next.logoff);
@@ -84,7 +89,7 @@ async function send(aid) {
 		if (next.download) save(next.download);
 	} catch (e) {
 		console.error(e);
-		hostMessage("HOST NOT RESPONDING - PRESS ENTER TO RETRY", () => send(state.lastAid));
+		hostMessage(`${msgId("0298E")} HOST ${location.host.toUpperCase()} NOT RESPONDING - PRESS ENTER TO RETRY`, () => send(state.lastAid), "PRESS ENTER TO RETRY");
 		return;
 	}
 	render();
@@ -108,7 +113,7 @@ async function snapshot(format) {
 			body: JSON.stringify(body),
 		});
 		if (res.status === 429) {
-			state.message = "TOO MANY SNAPSHOTS - WAIT A MINUTE";
+			state.message = "SNAPSHOTS: WAIT A MINUTE";
 			render();
 			return;
 		}
@@ -122,6 +127,15 @@ async function snapshot(format) {
 		state.message = "SNAPSHOT FAILED";
 		render();
 	}
+}
+
+// printScreen saves what the screen shows as a text file.
+function printScreen() {
+	const s = state.scr;
+	const lines = Array.from({ length: s.rows }, (_, r) => s.rowText(r + 1).trimEnd());
+	const now = new Date();
+	const stamp = `${now.getFullYear()}${two(now.getMonth() + 1)}${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}${two(now.getSeconds())}`;
+	download(new Blob([lines.join("\n") + "\n"], { type: "text/plain" }), `PRINT-${stamp}.txt`);
 }
 
 function download(blob, name) {
@@ -142,7 +156,7 @@ async function save({ url, name }) {
 		download(await res.blob(), name);
 	} catch (e) {
 		console.error(e);
-		hostMessage(`${name} NOT RECEIVED - PRESS ENTER TO RETRY`.toUpperCase(), () => save({ url, name }));
+		hostMessage(`${msgId("1509E")} ${name.toUpperCase()} NOT RECEIVED - PRESS ENTER TO RETRY`, () => save({ url, name }), "PRESS ENTER TO RETRY");
 	}
 }
 
@@ -234,14 +248,32 @@ function loggedOff(message) {
 	hostMessage("", () => send("START"));
 }
 
-// hostMessage keeps the operator's screen and input and shows a message in
-// the OIA; Enter (or Reset, then Enter) runs retry.
-function hostMessage(text, retry) {
+// hostMessage keeps the operator's screen and input, puts text on its
+// message line (the OIA has room for only a few words, short), and lets
+// Enter (or Reset, then Enter) run retry.
+function hostMessage(text, retry, short = "") {
+	if (text) screenMessage(text);
 	state.lock = Lock.NONE;
-	state.message = text;
+	state.message = short;
 	state.retry = retry;
 	render();
 }
+
+// screenMessage writes the terminal's own message on the message line,
+// the second to last row, in red as an error, the way the Go terminal does.
+function screenMessage(text) {
+	const s = state.scr;
+	s.text(s.rows - 1, 2, text.slice(0, s.cols - 2).padEnd(s.cols - 2), { color: "red", intense: true });
+}
+
+// errorText is the message of the Worker's error envelope, or the status.
+async function errorText(res) {
+	const body = await res.json().catch(() => null);
+	const msg = typeof body?.error?.message === "string" ? body.error.message : `HTTP ${res.status}`;
+	return msg.toUpperCase();
+}
+
+const msgId = (id) => state.prefix + id;
 
 // --- Sizing --------------------------------------------------------------
 
@@ -324,12 +356,16 @@ function cellClass(a) {
 
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+// render draws the screen a row at a time and touches only the rows that
+// changed, so a key on a large screen redraws one line, not all of them.
+let drawn = []; // each row's HTML as last drawn
 function render() {
 	const s = state.scr;
-	let html = "";
+	const rows = [];
 	let attr = s.attrAt(s.buf.length - 1); // fields wrap from the last row
 	if (s.fieldAttr(s.buf.length - 1) < 0) attr = { protected: false };
 	for (let row = 0; row < s.rows; row++) {
+		let html = "";
 		let run = "";
 		let runCls = null;
 		const flush = () => {
@@ -361,9 +397,14 @@ function render() {
 			run += ch;
 		}
 		flush();
-		html += "\n";
+		rows.push(html);
 	}
-	el.screen.innerHTML = html;
+	if (el.screen.children.length !== rows.length) {
+		el.screen.innerHTML = rows.map((r) => `<div>${r}</div>`).join("");
+	} else {
+		rows.forEach((r, i) => r !== drawn[i] && (el.screen.children[i].innerHTML = r));
+	}
+	drawn = rows;
 	el.oia.innerHTML = oia();
 	announce();
 }
@@ -374,7 +415,7 @@ function render() {
 let announced = "";
 function announce() {
 	const s = state.scr;
-	const text = [s.rowText(1), state.message || s.rowText(s.rows - 1)].map((t) => t.trim().replace(/ {2,}/g, "  ")).filter(Boolean).join(". ");
+	const text = [s.rowText(1), s.rowText(s.rows - 1), state.message ?? ""].map((t) => t.trim().replace(/ {2,}/g, "  ")).filter(Boolean).join(". ");
 	if (text === announced) return;
 	announced = text;
 	el.announce.textContent = text;
@@ -426,6 +467,10 @@ for (let n = 1; n <= 12; n++) {
 pfKeys.PageUp = "PF7";
 pfKeys.PageDown = "PF8";
 
+// After Esc, 1-9, 0, - and = are PF1-PF12 and Up is PF24 (RETRIEVE), as in
+// the Go terminal, for keyboards whose function keys the browser keeps.
+const escPF = { 1: "PF1", 2: "PF2", 3: "PF3", 4: "PF4", 5: "PF5", 6: "PF6", 7: "PF7", 8: "PF8", 9: "PF9", 0: "PF10", "-": "PF11", "=": "PF12", ArrowUp: "PF24" };
+
 function keyName(e) {
 	let k = e.key;
 	if (k === " ") k = "Space";
@@ -460,6 +505,19 @@ function reset() {
 function onKey(e) {
 	const k = keyName(e);
 	if (!state.started) return;
+	const afterEsc = state.esc;
+	state.esc = k === "Escape";
+	if (afterEsc && escPF[k]) {
+		e.preventDefault();
+		aidKey(escPF[k]);
+		return;
+	}
+	// Ctrl+P saves the screen as text, as the Go terminal's PRINT key does.
+	if (k === "Ctrl+p") {
+		e.preventDefault();
+		printScreen();
+		return;
+	}
 	// Ctrl+S saves a picture of the screen, Ctrl+Shift+S a PDF.
 	if (k === "Ctrl+s") {
 		e.preventDefault();
@@ -662,6 +720,7 @@ async function appInfo() {
 		if (!res.ok) return;
 		const info = await res.json();
 		if (info.system) state.system = info.system;
+		if (/^[A-Z0-9#@$]{1,8}$/.test(info.prefix ?? "")) state.prefix = info.prefix;
 		if (info.title) document.title = info.title;
 		state.features = { live: info.live === true, snapshot: info.snapshot === true };
 		document.querySelector("[data-snap]")?.toggleAttribute("hidden", !state.features.snapshot);

@@ -16,9 +16,8 @@
 // Subclass it to push events of your own; see watch.
 
 import { DurableObject } from "cloudflare:workers";
-import { USER_HEADER } from "./app.js";
 import type { Holder, HoldResult, SyncResult } from "./engine.js";
-import { HttpError } from "./http.js";
+import { HttpError, USER_HEADER } from "./http.js";
 import type { SendResult } from "./send.js";
 
 export type { Holder, HoldResult, SyncResult } from "./engine.js";

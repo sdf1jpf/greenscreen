@@ -105,7 +105,7 @@ is an unprotected input field, prefilled with `value`.
 | `bright` | all | `false`, `true`: high intensity. |
 | `highlight` | all | `none` for output and `underscore` for input; also `reverse`, `blink`. |
 | `hidden` | all | `false`, `true`: non-display, e.g. a password. |
-| `numeric` | input | `false`, `true`: only digits may be typed. |
+| `numeric` | input | `false`, `true`: only the digits 0-9, `.` and `-` may be typed. |
 | `mixed` | input | `false`, `true`: keep lower case. Otherwise the client folds typed letters to upper case. |
 | `modified` | input | `false`, `true`: start with the modified data tag set, so the field is sent back in `modified` as if typed. The Worker uses it to put back what the operator typed before PF1, a value picked from a help list, and a retrieved command. |
 
@@ -236,8 +236,10 @@ state sent back by a different user than the one it was issued to, and for
 one older than the server's lifetime for it (30 minutes by default, the idle
 limit), since each reply carries a fresh one. The commarea also lists the
 input fields of its screen, and the server ignores input for any other
-field, cuts values to the field's length, and drops a numeric field's value
-if it holds more than digits, `.` and `-`.
+field and cuts values to the field's length. A numeric field holding more
+than ASCII digits, `.`, `-` and blanks is refused before the panel sees the
+screen: the same screen comes back with what was typed and an `xxx0003E`
+message.
 
 `@greenscreen-dev/worker` refuses to serve screens without a `stateKey`,
 except under `wrangler dev` with `DEV_USER` or when the app sets

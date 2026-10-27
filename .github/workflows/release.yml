@@ -51,7 +51,12 @@ jobs:
       - run: npm run build -w packages/worker
       - name: Publish the packages
         run: |
+          # Skip what is already on npm, so a run that failed part way
+          # through can be run again.
           for p in packages/worker packages/web packages/create; do
+            n=$(node -p "require('./$p/package.json').name")
+            v=$(node -p "require('./$p/package.json').version")
+            if [ -n "$(npm view "$n@$v" version 2>/dev/null)" ]; then echo "$n@$v is already published"; continue; fi
             (cd "$p" && npm publish)
           done
       - name: Tag the release

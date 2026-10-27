@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 // @ts-expect-error plain JavaScript
-import { create } from "../bin/create.js";
+import { create, nextSteps, packageManager } from "../bin/create.js";
 
 it("copies the template and names the app after its directory", () => {
 	const dir = join(mkdtempSync(join(tmpdir(), "gs-")), "My Till");
@@ -19,4 +19,13 @@ it("copies the template and names the app after its directory", () => {
 
 it("refuses a directory that has files", () => {
 	expect(() => create(join(__dirname, ".."))).toThrow(/not empty/);
+});
+
+it("gives the next steps for the package manager that ran it", () => {
+	expect(packageManager("pnpm/9.12.0 npm/? node/v22.11.0 linux x64")).toBe("pnpm");
+	expect(packageManager("yarn/4.5.0 npm/? node/v22.11.0")).toBe("yarn");
+	expect(packageManager("npm/10.9.0 node/v22.11.0")).toBe("npm");
+	expect(packageManager("")).toBe("npm");
+	expect(nextSteps("till", "npm")).toContain("npm install\n  npm run dev");
+	expect(nextSteps("till", "pnpm")).toContain("pnpm install\n  pnpm dev");
 });

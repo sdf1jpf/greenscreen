@@ -43,6 +43,11 @@ export function errorResponse(e: HttpError): Response {
 
 const MAX_BODY = 1 << 20;
 
+// USER_HEADER carries the signed-on userid from the Worker to the live
+// server (the Sessions object). It is here so that sessions.js needs
+// nothing from app.js, and so nothing from Hono.
+export const USER_HEADER = "X-Greenscreen-User";
+
 // readJSON parses a request body as a JSON object, rejecting other content
 // types, oversized bodies and keys outside `allowed`. Requiring
 // application/json means a cross-site form can't post one, whatever the
@@ -50,6 +55,7 @@ const MAX_BODY = 1 << 20;
 export async function readJSON(req: Request, allowed: readonly string[]): Promise<Record<string, unknown>> {
 	const type = req.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
 	if (type !== "application/json") throw new HttpError(415, "bad_request", "send the body as application/json");
+	if (Number(req.headers.get("Content-Length")) > MAX_BODY) throw new HttpError(413, "bad_request", "request body too large");
 	const text = await req.text();
 	if (text.length > MAX_BODY) throw new HttpError(413, "bad_request", "request body too large");
 	let body: unknown;

@@ -39,6 +39,17 @@ export type Next = PanelState | Logoff;
 // Program renders a panel from its state and handles an AID key, returning
 // the state to show next (the same object to stay) or a logoff. E is the
 // Worker's bindings.
+//
+// Two things to know when writing one:
+//
+//   - handle can run more than once for the same screen. A commarea can be
+//     sent back for as long as it lives (30 minutes by default), as when a
+//     reply was lost and the operator presses Enter again. Make a change
+//     with side effects idempotent: the POS example gives each sale a token
+//     when it starts and writes a token only once.
+//   - render may note things in the state, such as which records a list
+//     shows (see page in list.ts): the state is sealed into the commarea
+//     after render, so handle sees them on the next key.
 export interface Program<S extends PanelState = PanelState, E = unknown> {
 	render(ctx: Ctx<E>, s: S): Screen | Promise<Screen>;
 	handle(ctx: Ctx<E>, s: S, input: Input): Next | Promise<Next>;

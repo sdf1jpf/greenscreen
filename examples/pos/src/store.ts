@@ -109,7 +109,10 @@ export class D1Store implements Store {
 
 export class MemoryStore implements Store {
 	private list: Sale[] = [];
-	constructor(private catalog: Product[]) {}
+	private catalog: Product[];
+	constructor(catalog: Product[]) {
+		this.catalog = catalog.map((p) => ({ ...p })); // a price change stays in this store
+	}
 
 	async product(sku: string) {
 		return this.catalog.find((p) => p.sku === sku);

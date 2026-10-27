@@ -165,8 +165,11 @@ describe("screen engine", () => {
 		const c = await send({ aid: "ENTER", state: start.state, fields: { option: "1 5" } });
 		const cut = await send({ aid: "ENTER", state: c.state, fields: { step: "12345" } });
 		expect(texts(cut)).toContain("COUNT 1239");
-		const letters = await send({ aid: "ENTER", state: cut.state, fields: { step: "9x" } });
-		expect(texts(letters)).toContain("COUNT 1240");
+		const letters = await send({ aid: "ENTER", state: cut.state, fields: { step: "9x" }, modified: ["step"] });
+		expect(texts(letters)).toContain("COUNT 1239"); // not counted: the panel never saw it
+		expect(texts(letters)).toContain("TST0003E ONLY DIGITS, - AND . CAN BE ENTERED IN STEP");
+		expect(letters.screen.fields.find((f) => f.name === "step")).toMatchObject({ value: "9x", modified: true });
+		expect(letters.screen.cursor).toEqual({ field: "step" });
 		const big = "9".repeat(200_000);
 		const h = await send({ aid: "PF1", state: letters.state, fields: { step: big, other: big }, modified: ["step", "other"] });
 		expect(h.state.length).toBeLessThan(4000);
@@ -202,10 +205,51 @@ describe("screen engine", () => {
 		const h = await send({ aid: "PF1", state: c.state, cursor: { row: 6, col: 2, field: "step" } });
 		expect(h.screen.map).toBe("TSTH01");
 		expect(texts(h)).toContain("HELP - STEP");
-		const back = await send({ aid: "ENTER", state: h.state, fields: { "pick:1": "S" } });
+		const back = await send({ aid: "ENTER", state: h.state, fields: { "pick:5": "S" } });
 		expect(back.screen.map).toBe("TST010");
 		const step = back.screen.fields.find((f) => f.name === "step");
 		expect(step).toMatchObject({ value: "5", modified: true });
+	});
+
+	it("picks a help value by its code, even if the list changed under it", async () => {
+		const list = values(["1", "ONE"], ["5", "FIVE"]);
+		const a = app({ fieldHelp: helpTable({ step: { title: "STEP", lines: ["How much to add."], values: () => list } }) });
+		const post = async (body: Record<string, unknown>): Promise<Reply> => (await a.request("/v1/screen", {
+			method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, rows: 24, cols: 80, ...body }),
+		}, devEnv)).json();
+		const c = await post({ aid: "ENTER", state: (await post({ aid: "START" })).state, fields: { option: "1" } });
+		const h = await post({ aid: "PF1", state: c.state, cursor: { row: 6, col: 2, field: "step" } });
+		list.unshift({ code: "0", desc: "NONE" }); // a value added above the one picked
+		const back = await post({ aid: "ENTER", state: h.state, fields: { "pick:5": "S" } });
+		expect(back.screen.fields.find((f) => f.name === "step")).toMatchObject({ value: "5" });
+		const h2 = await post({ aid: "PF1", state: back.state, cursor: { row: 6, col: 2, field: "step" } });
+		list.splice(0, list.length);
+		list.push({ code: "9", desc: "NINE" });
+		const gone = await post({ aid: "ENTER", state: h2.state, fields: { "pick:5": "S" } });
+		expect(texts(gone)).toContain("TST0104W THAT VALUE IS NO LONGER IN THE LIST");
+	});
+
+	it("goes 16 panels deep and says why it can't go further", async () => {
+		const deeper = panel<PanelState, Env>({
+			render: (ctx) => newScreen(ctx, "TST099"),
+			handle: (_ctx, s) => ({ p: "deeper", back: s }),
+		});
+		const a = app({ programs: { menu, count, deeper }, start: () => ({ p: "deeper" }) });
+		const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+		let state = "";
+		const statuses: number[] = [];
+		for (let i = 0; i < 17; i++) {
+			const res = await a.request("/v1/screen", {
+				method: "POST", headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ v: 1, rows: 24, cols: 80, aid: i ? "ENTER" : "START", state }),
+			}, devEnv);
+			statuses.push(res.status);
+			if (res.ok) state = ((await res.json()) as Reply).state;
+		}
+		expect(statuses.slice(0, 16).every((st) => st === 200)).toBe(true);
+		expect(statuses[16]).toBe(500);
+		expect(String(errors.mock.calls[0][0])).toContain('panel "deeper" is 17 panels deep');
+		errors.mockRestore();
 	});
 
 	it("shows the tutorial on PF1 outside a field", async () => {

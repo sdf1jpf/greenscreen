@@ -26,8 +26,8 @@ export const tutorialKeys: [string, string][] = [
 	["CTRL+E", "Erase to end of field (ERASE EOF)"],
 	["CTRL+U", "Erase all input fields (ERASE INPUT)"],
 	["ESC / CTRL+R", "RESET. ESC then 1-9 0 - = is PF1 - PF12 (no F keys)"],
-	["CTRL+P", "PRINT: save a copy of the screen to a text file"],
-	["CTRL+C", "Disconnect the terminal session"],
+	["CTRL+P / CTRL+S", "Save the screen: as text (PRINT) / as a picture (SNAP)"],
+	["CTRL+C", "Disconnect (the terminal program; close a browser tab)"],
 ];
 
 export function helpProgram<E>(lookup: FieldHelpLookup<E>, tutorial = tutorialKeys): Program<HelpState, E> {
@@ -48,20 +48,19 @@ export function helpProgram<E>(lookup: FieldHelpLookup<E>, tutorial = tutorialKe
 				const first = listTop(fh.lines.length);
 				const rows = listRows(ctx, fh.lines.length);
 				const shown = page(h, values, rows);
-				const top = h.top!;
 				const width = Math.max(...values.map((x) => x.code.length));
 				scr.text(first - 1, 4, "VALID VALUES - TYPE S BESIDE ONE AND PRESS ENTER TO USE IT", { color: "white", bright: true });
 				const at = position(h, rows);
 				if (at) scr.text(first - 1, scr.cols - 24, at, { color: "white" });
 				shown.forEach((x, i) => {
-					const name = `pick:${top + i}`;
+					const name = `pick:${x.code}`;
 					scr.input(first + i, 4, 1, name, "", { bright: h.errSel === name });
 					scr.text(first + i, 6, pad(x.code, width), { color: "white", bright: true });
 					scr.text(first + i, 8 + width, x.desc.slice(0, scr.cols - 9 - width), { color: "turquoise" });
 				});
 				message(scr, h.msg ?? "");
 				keys(scr, values.length > rows ? "PF1=TUTORIAL  PF3=RETURN  PF7=UP  PF8=DOWN" : "PF1=TUTORIAL  PF3=RETURN");
-				scr.cursorTo(h.errSel && shown.length > 0 ? h.errSel : `pick:${top}`);
+				scr.cursorTo(h.errSel && shown.length > 0 ? h.errSel : `pick:${shown[0].code}`);
 				return scr;
 			}
 			const scr = newScreen(ctx, ctx.app.prefix + "H00");
@@ -96,13 +95,18 @@ export function helpProgram<E>(lookup: FieldHelpLookup<E>, tutorial = tutorialKe
 					for (const [name, val] of Object.entries(input.fields)) {
 						const code = val.trim().toUpperCase();
 						if (!name.startsWith("pick:") || code === "") continue;
-						const picked: Value | undefined = values[Number(name.slice(5))];
+						// Picked by code, not by row, in case the list changed since it was shown.
+						const picked: Value | undefined = values.find((v) => v.code === name.slice(5));
 						if (code !== "S" && code !== "/") {
 							h.msg = `${msgId(ctx, "0103E")} INVALID SELECTION CODE "${code}" - TYPE S BESIDE A VALUE`;
 							h.errSel = name;
 							return h;
 						}
-						if (picked) return back(h, { [h.field]: picked.code });
+						if (!picked) {
+							h.msg = `${msgId(ctx, "0104W")} THAT VALUE IS NO LONGER IN THE LIST`;
+							return h;
+						}
+						return back(h, { [h.field]: picked.code });
 					}
 				}
 			}

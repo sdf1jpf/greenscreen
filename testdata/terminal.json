@@ -33,6 +33,11 @@
 			"want": { "fields": { "name": "", "qty": "12", "note": "ab", "kept": "OLD" }, "modified": ["kept", "qty"], "cursor": [5, 14], "lock": "" }
 		},
 		{
+			"name": "a numeric field takes only the ASCII digits the Worker accepts",
+			"keys": ["tab", "type ٣"],
+			"want": { "fields": { "name": "", "qty": "", "note": "ab", "kept": "OLD" }, "modified": ["kept"], "cursor": [5, 12], "lock": "X NUM" }
+		},
+		{
 			"name": "typing on a protected position locks",
 			"keys": ["moveTo 4 3", "type A"],
 			"want": { "fields": { "name": "", "qty": "", "note": "ab", "kept": "OLD" }, "modified": ["kept"], "cursor": [4, 3], "lock": "X -f" }

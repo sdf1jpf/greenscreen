@@ -10,7 +10,7 @@ import { pf, type MenuState, type Next, type PanelState, type Program } from "./
 export interface Option<E = unknown> {
 	key: string;
 	name: string;
-	desc: string; // keep it to 22 characters or fewer if the menu may show two columns
+	desc: string; // a menu too long for one column shows two, cutting descriptions to 22 characters on 80 columns
 	aliases?: string[];
 	sub?: string; // opens this submenu
 	go?: (ctx: Ctx<E>, back: MenuState, arg: string, rest: string) => Next | Promise<Next>; // rest: every word after the option
@@ -75,22 +75,31 @@ export function menuProgram<E>(menus: Menus<E>, opts: MenuOptions<E> = {}): Prog
 			label(scr, 4, 2, "OPTION ===>");
 			scr.input(4, 14, 40, "option", m.option ?? "");
 
-			mn.options.forEach(({ key, name, desc }, i) => {
-				scr.text(6 + i, 4, key, { color: "white", bright: true });
-				scr.text(6 + i, 7, name, { color: "turquoise" });
-				scr.text(6 + i, 7 + NAME_WIDTH, desc, { color: "green" });
+			// The options run down from row 6 to above the hint lines (and the
+			// info line), in two columns when one won't hold them.
+			const info = primary && opts.info !== false;
+			const room = scr.rows - 5 - 6 - (info ? 2 : 0);
+			const perColumn = mn.options.length > room ? Math.min(Math.ceil(mn.options.length / 2), room) : mn.options.length;
+			const column = Math.floor((scr.cols - 4) / 2);
+			mn.options.slice(0, 2 * perColumn).forEach(({ key, name, desc }, i) => {
+				const row = 6 + (i % perColumn);
+				const col = 4 + Math.floor(i / perColumn) * column;
+				const width = perColumn < mn.options.length ? column - 4 - NAME_WIDTH : scr.cols - col - 3 - NAME_WIDTH;
+				scr.text(row, col, key, { color: "white", bright: true });
+				scr.text(row, col + 3, name, { color: "turquoise" });
+				scr.text(row, col + 3 + NAME_WIDTH, desc.slice(0, width), { color: "green" });
 			});
 
-			if (primary && opts.info !== false) {
-				const info = [
+			if (info) {
+				const items = [
 					["USERID", ctx.user],
 					["TERMINAL", ctx.terminal],
 					["SYSTEM", ctx.system],
 					["HOST", ctx.host.toUpperCase().slice(0, 30)],
 				];
-				const row = 7 + mn.options.length;
+				const row = 7 + perColumn;
 				let col = 4;
-				for (const [k, v] of info) {
+				for (const [k, v] of items) {
 					if (col + k.length + v.length + 1 > scr.cols) break;
 					label(scr, row, col, k);
 					scr.text(row, col + k.length + 1, v, { color: "white" });

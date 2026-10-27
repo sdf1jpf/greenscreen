@@ -1,0 +1,91 @@
+{
+	"about": "Keyboard cases both terminals run against their screen models: tn3270 (Go, internal/host) and packages/web/public/screen.js (vitest). Each starts from a screen in the wire format of docs/protocol.md, applies keys in order, and expects the fields as a Read Modified would send them, the modified tags, the cursor and the keyboard lock. Keys: \"type TEXT\" types each character, stopping at the first lock; \"insert\" toggles insert mode; \"reset\" clears the lock; \"move DROW DCOL\"; \"moveTo ROW COL\"; and tab, backtab, newline, home, end, backspace, delete, eraseEOF, eraseInput.",
+	"screen": {
+		"rows": 24,
+		"cols": 80,
+		"fields": [
+			{ "row": 1, "col": 2, "text": "TST010" },
+			{ "row": 4, "col": 2, "text": "NAME ===>" },
+			{ "row": 4, "col": 12, "name": "name", "length": 5 },
+			{ "row": 5, "col": 2, "text": "QTY ===>" },
+			{ "row": 5, "col": 12, "name": "qty", "length": 3, "numeric": true },
+			{ "row": 6, "col": 2, "text": "NOTE ===>" },
+			{ "row": 6, "col": 12, "name": "note", "length": 6, "value": "ab", "mixed": true },
+			{ "row": 8, "col": 12, "name": "kept", "length": 4, "value": "OLD", "modified": true },
+			{ "row": 24, "col": 2, "text": "PF3=EXIT" }
+		],
+		"cursor": { "field": "name" }
+	},
+	"cases": [
+		{
+			"name": "typing folds to upper case and skips to the next field at the end of one",
+			"keys": ["type hello1"],
+			"want": { "fields": { "name": "HELLO", "qty": "1", "note": "ab", "kept": "OLD" }, "modified": ["kept", "name", "qty"], "cursor": [5, 13], "lock": "" }
+		},
+		{
+			"name": "a mixed-case field keeps lower case",
+			"keys": ["tab", "tab", "end", "type Cd"],
+			"want": { "fields": { "name": "", "qty": "", "note": "abCd", "kept": "OLD" }, "modified": ["kept", "note"], "cursor": [6, 16], "lock": "" }
+		},
+		{
+			"name": "a numeric field locks on a letter, and reset frees the keyboard",
+			"keys": ["tab", "type 1x", "reset", "type 2"],
+			"want": { "fields": { "name": "", "qty": "12", "note": "ab", "kept": "OLD" }, "modified": ["kept", "qty"], "cursor": [5, 14], "lock": "" }
+		},
+		{
+			"name": "typing on a protected position locks",
+			"keys": ["moveTo 4 3", "type A"],
+			"want": { "fields": { "name": "", "qty": "", "note": "ab", "kept": "OLD" }, "modified": ["kept"], "cursor": [4, 3], "lock": "X -f" }
+		},
+		{
+			"name": "insert shifts right, and locks when the field is full",
+			"keys": ["type ABCD", "home", "insert", "type X", "type Y"],
+			"want": { "fields": { "name": "XABCD", "qty": "", "note": "ab", "kept": "OLD" }, "modified": ["kept", "name"], "cursor": [4, 13], "lock": "X >" }
+		},
+		{
+			"name": "backspace and delete pull the rest of the field left",
+			"keys": ["type ABCDE", "moveTo 4 14", "backspace", "delete"],
+			"want": { "fields": { "name": "ADE", "qty": "", "note": "ab", "kept": "OLD" }, "modified": ["kept", "name"], "cursor": [4, 13], "lock": "" }
+		},
+		{
+			"name": "backspace at the start of a field does nothing",
+			"keys": ["backspace"],
+			"want": { "fields": { "name": "", "qty": "", "note": "ab", "kept": "OLD" }, "modified": ["kept"], "cursor": [4, 12], "lock": "" }
+		},
+		{
+			"name": "erase EOF clears from the cursor and sets the tag",
+			"keys": ["tab", "tab", "move 0 1", "eraseEOF"],
+			"want": { "fields": { "name": "", "qty": "", "note": "a", "kept": "OLD" }, "modified": ["kept", "note"], "cursor": [6, 13], "lock": "" }
+		},
+		{
+			"name": "erase input clears every field and goes home",
+			"keys": ["type AB", "eraseInput"],
+			"want": { "fields": { "name": "", "qty": "", "note": "", "kept": "" }, "modified": ["kept", "name", "note", "qty"], "cursor": [4, 12], "lock": "" }
+		},
+		{
+			"name": "tab wraps from the last field to the first, and backtab goes back",
+			"keys": ["tab", "tab", "tab", "tab", "backtab"],
+			"want": { "fields": { "name": "", "qty": "", "note": "ab", "kept": "OLD" }, "modified": ["kept"], "cursor": [8, 12], "lock": "" }
+		},
+		{
+			"name": "backtab inside a field goes to its start first",
+			"keys": ["type AB", "backtab"],
+			"want": { "fields": { "name": "AB", "qty": "", "note": "ab", "kept": "OLD" }, "modified": ["kept", "name"], "cursor": [4, 12], "lock": "" }
+		},
+		{
+			"name": "new line goes to the first field below",
+			"keys": ["newline", "newline"],
+			"want": { "fields": { "name": "", "qty": "", "note": "ab", "kept": "OLD" }, "modified": ["kept"], "cursor": [6, 12], "lock": "" }
+		},
+		{
+			"name": "end goes after the last character typed",
+			"keys": ["type AB", "home", "end"],
+			"want": { "fields": { "name": "AB", "qty": "", "note": "ab", "kept": "OLD" }, "modified": ["kept", "name"], "cursor": [4, 14], "lock": "" }
+		},
+		{
+			"name": "the cursor wraps around the screen",
+			"keys": ["moveTo 1 1", "move -1 -1"],
+			"want": { "fields": { "name": "", "qty": "", "note": "ab", "kept": "OLD" }, "modified": ["kept"], "cursor": [23, 80], "lock": "" }
+		}
+	]
+}

@@ -39,7 +39,7 @@ func (s *Screen) Type(r rune, insert bool) Lock {
 	if a.Protected {
 		return LockProtected
 	}
-	if a.Numeric && !(unicode.IsDigit(r) || r == '-' || r == '.') {
+	if a.Numeric && !(r >= '0' && r <= '9' || r == '-' || r == '.') { // ASCII digits, as the Worker takes
 		return LockNumeric
 	}
 	if insert {

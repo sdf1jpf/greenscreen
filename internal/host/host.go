@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sdf1jpf/greenscreen/internal/api"
 	t3 "github.com/sdf1jpf/greenscreen/tn3270"
@@ -109,6 +110,7 @@ type Session struct {
 	mu     sync.Mutex    // guards the fields below, shared with the listener
 	live   string        // what the current screen shows that pushes announce
 	mapID  string        // the current screen's map, for naming snapshots
+	on     bool          // past the logon screen; Snapshot runs on its own goroutine
 	listen bool          // connected to GET /v1/live
 	stop   context.CancelFunc
 }
@@ -195,12 +197,12 @@ func (s *Session) Snapshot(scr *t3.Screen, format string) (string, error) {
 	if !ok || !s.cfg.Snapshots || s.cfg.DownloadDir == "" {
 		return "", errors.New("this terminal cannot take snapshots")
 	}
-	if s.logon != nil {
+	s.mu.Lock()
+	m, on := s.mapID, s.on
+	s.mu.Unlock()
+	if !on {
 		return "", errors.New("not logged on")
 	}
-	s.mu.Lock()
-	m := s.mapID
-	s.mu.Unlock()
 	row, col := scr.RowCol(scr.Cursor())
 	req := api.SnapshotRequest{
 		Format: format, Map: m, Terminal: s.lu,
@@ -264,6 +266,9 @@ func writeNew(dir, name string, b []byte) (string, error) {
 // start fetches the application's first screen after logon.
 func (s *Session) start() *t3.Screen {
 	s.logon, s.state = nil, ""
+	s.mu.Lock()
+	s.on = true
+	s.mu.Unlock()
 	resp, err := s.api().Screen(s.ctx(), s.request("START", nil))
 	if err == nil && resp.Logoff != nil {
 		// The application turned the user away (not on its user file, say):
@@ -289,6 +294,9 @@ func (s *Session) toLogon(msg string) *t3.Screen {
 	s.stopListening()
 	s.user, s.state = "", ""
 	s.logon = &logon{msg: msg}
+	s.mu.Lock()
+	s.on = false
+	s.mu.Unlock()
 	return s.logon.Render(s)
 }
 
@@ -485,8 +493,8 @@ func message(scr *t3.Screen, msg string) {
 		color = t3.Yellow
 	}
 	n := scr.Cols() - 2
-	if len(msg) > n {
-		msg = msg[:n]
+	if r := []rune(msg); len(r) > n {
+		msg = string(r[:n]) // by character: a message can carry what was typed
 	}
-	scr.Text(scr.Rows()-1, 2, msg+strings.Repeat(" ", n-len(msg)), t3.WithColor(color), t3.Bright)
+	scr.Text(scr.Rows()-1, 2, msg+strings.Repeat(" ", n-utf8.RuneCountInString(msg)), t3.WithColor(color), t3.Bright)
 }

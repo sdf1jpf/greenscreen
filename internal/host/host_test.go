@@ -501,3 +501,32 @@ func TestInfoIsAskedAgainAfterLogon(t *testing.T) {
 		t.Fatalf("asked again: %d", known.asked)
 	}
 }
+
+// A snapshot runs on a goroutine of its own while the operator logs on and
+// off; run with -race.
+func TestSnapshotWhileLoggingOn(t *testing.T) {
+	f := &snapAPI{}
+	s := NewSession(&Config{SystemName: "TEST", Backend: f, DownloadDir: t.TempDir(), Snapshots: true}, "TERM0001")
+	scr := s.Start()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 50; i++ {
+			s.Snapshot(scr, "png")
+		}
+	}()
+	for i := 0; i < 20; i++ {
+		s.Submit(t3.AIDEnter, s.Start())
+		s.toLogon("")
+	}
+	<-done
+}
+
+func TestMessageLineCutsByCharacter(t *testing.T) {
+	scr := t3.NewScreen()
+	message(scr, "TST0299E "+strings.Repeat("é", 100))
+	row := []rune(strings.TrimRight(scr.Row(23), " "))
+	if len(row) != 79 || row[len(row)-1] != 'é' {
+		t.Fatalf("message line: %q", string(row))
+	}
+}

@@ -22,6 +22,11 @@ with the Access cookie, and an expired session reloads to sign on again.
 The page titles itself from `GET /v1/screen/info` and shows the app's system
 name in the status line. Add `?lu=TILL01` to the URL to name the terminal. Add `?glow` for the CRT look, phosphor glow and scan lines; the default is crisp text.
 
+Browsers keep some F-keys for themselves, so Esc then a digit is a PF key
+too: Esc 1 to Esc 9, Esc 0 for PF10, Esc - and Esc = for PF11 and PF12.
+Ctrl+P saves the screen as a text file (a 3270 print), and Ctrl+S as a
+picture when the app serves snapshots.
+
 On a phone or tablet, tap the screen to bring up the on-screen keyboard:
 the tap also moves the cursor there, and the key bar gives the AID keys.
 A screen reader hears each new screen's heading and message line.

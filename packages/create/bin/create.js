@@ -23,20 +23,33 @@ export function create(target) {
 	return { dir, name };
 }
 
+// The package manager that ran us ("npm create", "pnpm create", "yarn
+// create", "bun create") says so in npm_config_user_agent; the next steps
+// use the same one.
+export function packageManager(agent = process.env.npm_config_user_agent ?? "") {
+	const pm = agent.split("/")[0];
+	return ["pnpm", "yarn", "bun"].includes(pm) ? pm : "npm";
+}
+
+export function nextSteps(target, pm = packageManager()) {
+	const run = pm === "npm" ? "npm run" : pm;
+	return `Next:
+
+  cd ${target}
+  ${pm} install
+  ${run} dev
+
+Then open http://localhost:8787, or run the Go terminal against it:
+  go run github.com/sdf1jpf/greenscreen/cmd/greenscreen@latest -api http://localhost:8787`;
+}
+
 // Run as a command (npm links bin/ through a symlink), not imported by the tests.
 const invoked = process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
 if (invoked) {
 	const target = process.argv[2] ?? "greenscreen-app";
 	try {
 		const { name } = create(target);
-		console.log(`Created ${name} in ${target}. Next:
-
-  cd ${target}
-  npm install
-  npm run dev
-
-Then open http://localhost:8787, or run the Go terminal against it:
-  go run github.com/sdf1jpf/greenscreen/cmd/greenscreen@latest -api http://localhost:8787`);
+		console.log(`Created ${name} in ${target}. ${nextSteps(target)}`);
 	} catch (e) {
 		console.error(`create-greenscreen: ${e.message}`);
 		process.exit(1);

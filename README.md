@@ -87,6 +87,11 @@ A list longer than the screen scrolls with `page`, `scroll` and
 operator is told at the top or bottom (the POS price list and receipts
 use them).
 
+Under `wrangler dev` with `DEV_USER` set, every screen is checked as it is
+drawn: a field off the screen, running off its end, or on top of another
+(counting the attribute position before each field) is logged as a warning.
+`layoutProblems(scr)` does the same check in a test.
+
 A panel sends the operator a file with `withDownload(s, { url, name })`; the
 terminals fetch it from your API and save it. The POS example uses
 sessions, live, SEND and snapshots: `src/worker.ts` exports the Durable
@@ -125,7 +130,8 @@ live pushes stay apart. Without sessions, record who did something with
 Bump the version in `packages/worker`, `packages/web` and `packages/create`
 (and the template's dependencies), then push a matching tag, e.g. `v0.2.0`,
 or run the Release workflow by hand on main, which tags it once it's
-published. The Release workflow tests and publishes the packages on npm
+published. A run that fails part way through can be run again: it skips
+packages already on npm at that version. The Release workflow tests and publishes the packages on npm
 through trusted publishing (OIDC), so there is no npm token. Each package
 lists `sdf1jpf/greenscreen` and `release.yml` as its trusted publisher. The Go terminal is released by the same tag:
 `go install github.com/sdf1jpf/greenscreen/cmd/greenscreen@v0.2.0`.

@@ -132,6 +132,35 @@ export function textLines(scr: Screen): string[] {
 	return out;
 }
 
+// layoutProblems lists what is wrong with where a screen's fields are: off
+// the screen, or overlapping another field, counting the attribute
+// position before each field's data as a 3270 does. The engine logs them
+// under wrangler dev, where a panel is laid out.
+export function layoutProblems(scr: Screen): string[] {
+	const out: string[] = [];
+	const owner = new Array<number>(scr.rows * scr.cols).fill(-1);
+	const label = (f: Field) => (f.name !== undefined ? `input "${f.name}"` : `text ${JSON.stringify((f.text ?? "").slice(0, 20))}`) + ` at ${f.row},${f.col}`;
+	scr.fields.forEach((f, i) => {
+		if (f.row < 1 || f.row > scr.rows || f.col < 1 || f.col > scr.cols) {
+			out.push(`${label(f)} is off the ${scr.rows}x${scr.cols} screen`);
+			return;
+		}
+		const start = (f.row - 1) * scr.cols + f.col - 1;
+		const length = f.name !== undefined ? f.length ?? 0 : [...(f.text ?? "")].length;
+		if (start + length > owner.length) out.push(`${label(f)} runs off the end of the screen`);
+		for (let a = start - 1; a < Math.min(start + length, owner.length); a++) {
+			if (a < 0) continue;
+			const other = owner[a];
+			if (other >= 0) {
+				out.push(`${label(f)} overlaps ${label(scr.fields[other])}`);
+				break;
+			}
+			owner[a] = i;
+		}
+	});
+	return out;
+}
+
 // clean drops attributes at their default so the wire stays small.
 function clean(o: Opts, highlight: Highlight): Opts {
 	const out: Opts = {};

@@ -7,7 +7,7 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { accessAuth, type AccessEnv, type Auth, type Identity } from "./auth.js";
 import { requestKeys, screenHandler, type ScreenConfig, type SessionStore } from "./engine.js";
-import { errorResponse, HttpError, json, readJSON, str } from "./http.js";
+import { errorResponse, HttpError, json, readJSON, str, USER_HEADER } from "./http.js";
 import { format, imageResponse, render, screenHtml, snapScreen } from "./snapshot.js";
 
 export type AppEnv<E extends object> = { Bindings: E; Variables: { user: string; uid: string } };
@@ -31,8 +31,6 @@ export const SNAPSHOTS_PER_MINUTE = 10;
 
 const USERID_CACHE = 10_000; // identities each isolate remembers the userid of
 
-// USER_HEADER carries the signed-on userid to the live server.
-export const USER_HEADER = "X-Greenscreen-User";
 
 // signedOn signs the request on and sets "user" to the userid and "uid"
 // to the identity, or throws 401. With sessions, the store gives each

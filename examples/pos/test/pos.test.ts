@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import app from "../src/index";
 import type { Env } from "../src/common";
+import { MAX_LINES } from "../src/sale";
 import { MemoryStore } from "../src/store";
 
 const catalog = [
@@ -80,7 +81,7 @@ describe("point of sale", () => {
 		let r = await t.key("PF1", {}, "sku");
 		expect(r.screen.map).toBe("POSH01");
 		expect(text(r)).toContain("BAGEL, PLAIN  1.95");
-		r = await t.key("ENTER", { "pick:1": "S" });
+		r = await t.key("ENTER", { "pick:2001": "S" });
 		expect(r.screen.fields.find((f) => f.name === "sku")?.value).toBe("2001");
 	});
 
@@ -125,6 +126,16 @@ describe("point of sale", () => {
 		expect(r.screen.map).toBe("POS050");
 		expect(text(r)).toContain("POS0510I 2001 NOW 2.25");
 		expect(text(r)).toContain("2.25");
+	});
+
+	it("caps a sale's lines, since they travel in the commarea", async () => {
+		const t = terminal();
+		await t.key("START");
+		await t.key("ENTER", { option: "1" });
+		let r: Reply | undefined;
+		for (let i = 0; i <= MAX_LINES; i++) r = await t.key("ENTER", { sku: i % 2 ? "1001" : "2001" });
+		expect(text(r!)).toContain(`POS0208E A SALE HOLDS ${MAX_LINES} LINES`);
+		expect(text(r!)).toContain(`${MAX_LINES - 10} EARLIER LINE(S) NOT SHOWN`); // 10 fit above the totals
 	});
 
 	it("scrolls the price list back up after paging past its end", async () => {

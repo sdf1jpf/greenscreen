@@ -8,6 +8,9 @@ import { dollars, listRows, newSale, store, totals, type Env, type SaleState } f
 
 const FIRST = 8; // the first line row
 const MAX_QTY = 999;
+// The lines travel in the commarea with every key, so a sale holds at most
+// this many.
+export const MAX_LINES = 100;
 
 export const sale = panel<SaleState, Env>({
 	render(ctx, s) {
@@ -97,6 +100,7 @@ export const sale = panel<SaleState, Env>({
 		}
 		const same = s.lines.at(-1);
 		if (same && same.sku === prod.sku && same.qty + qty <= MAX_QTY) same.qty += qty;
+		else if (s.lines.length >= MAX_LINES) s.msg = `${msgId(ctx, "0208E")} A SALE HOLDS ${MAX_LINES} LINES - TENDER THIS ONE (PF5) AND START ANOTHER`;
 		else s.lines.push({ sku: prod.sku, desc: prod.desc, qty, price: prod.price });
 		return s;
 	},

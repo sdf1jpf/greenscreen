@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { fakeState } from "./fakedo";
-import { MAX_SESSIONS, Sessions } from "../src/sessions";
+import { IDLE_MS, MAX_SESSIONS, Sessions } from "../src/sessions";
 
 const tso = () => new Sessions(fakeState(), {});
 
@@ -48,6 +48,27 @@ describe("Sessions ids", () => {
 			expect(s.users().map((u) => u.sid).sort()).toEqual([...others].sort());
 			s.logon("BOB", "T3");
 			expect(s.users().filter((u) => u.user === "BOB")).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
+describe("Sessions idle limit", () => {
+	it("ends a session idle too long and frees its locks for others", () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		try {
+			const s = tso();
+			const alice = s.logon("ALICE", "T1");
+			s.sync(alice, "ALICE", "T1", "X", ["PRODUCT 1", "PRODUCT 2"]);
+			const bob = s.logon("BOB", "T2");
+			expect(s.hold(bob, "BOB", "T2", ["PRODUCT 1"]).lost).toMatchObject({ user: "ALICE" });
+			vi.advanceTimersByTime(IDLE_MS / 2);
+			s.sync(bob, "BOB", "T2", "X", []); // Bob stays active
+			vi.advanceTimersByTime(IDLE_MS / 2 + 1000);
+			expect(s.sync(bob, "BOB", "T2", "X", ["PRODUCT 1", "PRODUCT 2"]).conflict).toBeUndefined();
+			expect(s.users().map((u) => u.user)).toEqual(["BOB"]);
+			expect(s.locks().map((l) => [l.resource, l.user])).toEqual([["PRODUCT 1", "BOB"], ["PRODUCT 2", "BOB"]]);
 		} finally {
 			vi.useRealTimers();
 		}

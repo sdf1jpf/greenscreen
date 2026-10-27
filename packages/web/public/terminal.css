@@ -70,6 +70,31 @@ body {
 	left: -9999px;
 }
 
+/* Read by screen readers only. */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/* The box a phone's on-screen keyboard types into (softkeys.js): there but
+   unseen. 16px keeps iOS from zooming in when it takes focus. */
+#softkeys {
+	position: fixed;
+	left: 0;
+	bottom: 0;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+	font-size: 16px;
+	border: 0;
+	padding: 0;
+	resize: none;
+}
+
 .c-blue { --fg: var(--blue); }
 .c-red { --fg: var(--red); }
 .c-pink { --fg: var(--pink); }

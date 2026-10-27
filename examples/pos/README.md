@@ -1,8 +1,8 @@
 # Point of sale example
 
 A coffee-counter till on Greenscreen: ring up items, take cash or card,
-look up receipts, read the price list and the day's takings. Six panels,
-each a module in `src/`, on D1.
+look up receipts, read the price list and the day's takings. Seven panels
+and a menu, each a module in `src/`, on D1.
 
 | Map | Panel | Keys |
 | --- | --- | --- |

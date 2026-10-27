@@ -29,6 +29,8 @@ export interface AppConfig<E extends object> extends ScreenConfig<E> {
 
 export const SNAPSHOTS_PER_MINUTE = 10;
 
+const USERID_CACHE = 10_000; // identities each isolate remembers the userid of
+
 // USER_HEADER carries the signed-on userid to the live server.
 export const USER_HEADER = "X-Greenscreen-User";
 
@@ -37,12 +39,24 @@ export const USER_HEADER = "X-Greenscreen-User";
 // identity a userid of its own. It runs per route, so unknown paths get 404
 // without signing on.
 export function signedOn<E extends object>(auth: Auth<E>, sessions?: (env: E) => SessionStore | undefined): MiddlewareHandler<AppEnv<E>> {
+	// A store gives an identity its userid for good, so each isolate keeps
+	// the ones it has seen rather than ask the store on every request.
+	const userids = new Map<string, string>();
+	const useridOf = async (store: SessionStore, who: Identity) => {
+		let userid = userids.get(who.id);
+		if (userid === undefined) {
+			userid = await store.userid!(who.id, who.userid);
+			if (userids.size >= USERID_CACHE) userids.clear();
+			userids.set(who.id, userid);
+		}
+		return userid;
+	};
 	return async (c, next) => {
 		const ctx = c as unknown as Context<{ Variables: { user: string; uid: string } }>;
 		const got = await auth(c.env as E, c.req.raw);
 		const who: Identity = typeof got === "string" ? { id: got, userid: got } : got;
 		const store = sessions?.(c.env as E);
-		ctx.set("user", store?.userid ? await store.userid(who.id, who.userid) : who.userid);
+		ctx.set("user", store?.userid ? await useridOf(store, who) : who.userid);
 		ctx.set("uid", who.id);
 		await next();
 	};

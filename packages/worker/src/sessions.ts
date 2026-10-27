@@ -70,6 +70,11 @@ export class Sessions<E = unknown> extends DurableObject<E> {
 				text TEXT NOT NULL, sent INTEGER NOT NULL);
 			CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
 			CREATE TABLE IF NOT EXISTS userids (id TEXT PRIMARY KEY, userid TEXT NOT NULL UNIQUE);
+			CREATE INDEX IF NOT EXISTS sessions_seen ON sessions (seen);
+			CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user, seen);
+			CREATE INDEX IF NOT EXISTS locks_sid ON locks (sid);
+			CREATE INDEX IF NOT EXISTS messages_to ON messages (to_user, id);
+			CREATE INDEX IF NOT EXISTS messages_sent ON messages (sent);
 		`);
 		// A client's keepalive is answered without waking the object.
 		ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
@@ -144,6 +149,10 @@ export class Sessions<E = unknown> extends DurableObject<E> {
 	// holder returns who holds resource, if anyone.
 	holder(resource: string): Required<Holder> | null {
 		this.expire();
+		return this.heldBy(resource);
+	}
+
+	private heldBy(resource: string): Required<Holder> | null {
 		return this.sql.exec<Required<Holder>>(
 			"SELECT l.resource, l.sid, s.user, s.terminal, l.since FROM locks l JOIN sessions s USING (sid) WHERE l.resource = ?",
 			resource,
@@ -254,11 +263,12 @@ export class Sessions<E = unknown> extends DurableObject<E> {
 	}
 
 	// expire ends sessions idle longer than IDLE_MS, with their locks, and
-	// drops old undelivered messages.
+	// drops old undelivered messages. It runs on every call, so each step
+	// reads only the rows it removes.
 	private expire(): void {
 		const now = Date.now();
-		this.sql.exec("DELETE FROM sessions WHERE seen < ?", now - IDLE_MS);
-		this.sql.exec("DELETE FROM locks WHERE sid NOT IN (SELECT sid FROM sessions)");
+		const ended = this.sql.exec<{ sid: string }>("DELETE FROM sessions WHERE seen < ? RETURNING sid", now - IDLE_MS).toArray();
+		for (const { sid } of ended) this.sql.exec("DELETE FROM locks WHERE sid = ?", sid);
 		this.sql.exec("DELETE FROM messages WHERE sent < ?", now - KEEP_MESSAGES_MS);
 	}
 
@@ -289,7 +299,7 @@ export class Sessions<E = unknown> extends DurableObject<E> {
 
 	private conflict(sid: string, want: string[]): Required<Holder> | undefined {
 		for (const resource of want) {
-			const h = this.holder(resource);
+			const h = this.heldBy(resource);
 			if (h && h.sid !== sid) return h;
 		}
 		return undefined;

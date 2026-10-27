@@ -10,9 +10,11 @@
 </head>
 <body>
 <main id="tube" aria-label="3270 terminal">
-	<pre id="screen" aria-live="polite"></pre>
-	<pre id="oia"></pre>
+	<pre id="screen"></pre>
+	<pre id="oia" aria-hidden="true"></pre>
 </main>
+<div id="announce" class="sr-only" role="status" aria-live="polite"></div>
+<textarea id="softkeys" aria-label="Type into the terminal" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" tabindex="-1"></textarea>
 <nav id="keys" aria-label="Terminal keys">
 	<button tabindex="-1" data-aid="ENTER">ENTER</button>
 	<button tabindex="-1" data-aid="CLEAR">CLEAR</button>

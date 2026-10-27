@@ -58,21 +58,24 @@ export class D1Store implements Store {
 		await this.db.prepare("UPDATE products SET price = ? WHERE sku = ?").bind(price, sku).run();
 	}
 
+	// recordSale writes the sale and its lines in one batch, which D1 runs
+	// as a transaction, so a sale is never left without its lines.
 	async recordSale(s: NewSale) {
 		const at = new Date().toISOString();
-		const row = await this.db.prepare(
-			"INSERT INTO sales (token, at, cashier, subtotal, tax, total, tender, paid, change) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-			"ON CONFLICT (token) DO NOTHING RETURNING id",
-		).bind(s.token, at, s.cashier, s.subtotal, s.tax, s.total, s.tender, s.paid, s.change).first<{ id: number }>();
-		if (!row) {
-			const first = await this.db.prepare("SELECT id FROM sales WHERE token = ?").bind(s.token).first<{ id: number }>();
-			return (await this.sale(first!.id))!;
-		}
-		const id = row.id;
-		await this.db.batch(s.lines.map((l, i) =>
-			this.db.prepare("INSERT INTO sale_lines (sale, line, sku, descr, qty, price) VALUES (?, ?, ?, ?, ?, ?)")
-				.bind(id, i + 1, l.sku, l.desc, l.qty, l.price)));
-		return { ...s, id, at };
+		const results = await this.db.batch<{ id: number; at: string }>([
+			this.db.prepare(
+				"INSERT INTO sales (token, at, cashier, subtotal, tax, total, tender, paid, change) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+				"ON CONFLICT (token) DO NOTHING",
+			).bind(s.token, at, s.cashier, s.subtotal, s.tax, s.total, s.tender, s.paid, s.change),
+			...s.lines.map((l, i) =>
+				this.db.prepare("INSERT OR IGNORE INTO sale_lines (sale, line, sku, descr, qty, price) SELECT id, ?, ?, ?, ?, ? FROM sales WHERE token = ?")
+					.bind(i + 1, l.sku, l.desc, l.qty, l.price, s.token)),
+			this.db.prepare("SELECT id, at FROM sales WHERE token = ?").bind(s.token),
+		]);
+		const row = results.at(-1)!.results[0];
+		// Written before, by a tender whose reply was lost: the sale as it was.
+		if (row.at !== at) return (await this.sale(row.id))!;
+		return { ...s, id: row.id, at };
 	}
 
 	async sale(id: number) {

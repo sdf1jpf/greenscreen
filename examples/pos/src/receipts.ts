@@ -1,4 +1,4 @@
-import { clock, header, invalidKey, keys, lpad, message, msgId, newScreen, pad, panel, pf } from "@greenscreen-dev/worker";
+import { clock, header, invalidKey, keys, lpad, message, msgId, newScreen, pad, page, panel, pf, position, right, scroll } from "@greenscreen-dev/worker";
 import { dollars, listRows, store, type Env, type ReceiptState, type ReceiptsState } from "./common";
 
 // POS040 RECEIPTS: the latest sales, newest first. S beside one shows it.
@@ -12,8 +12,9 @@ export const receipts = panel<ReceiptsState, Env>({
 		header(scr, ctx, "RECEIPTS");
 		const sales = await store(ctx).sales(LIMIT);
 		const rows = listRows(ctx, FIRST);
-		const top = Math.min(s.top ?? 0, Math.max(sales.length - rows, 0));
-		const shown = sales.slice(top, top + rows);
+		const shown = page(s, sales, rows);
+		const at = position(s, rows);
+		if (at) scr.text(3, right(scr, 80) - at.length, at, { color: "white" });
 		s.ids = shown.map((x) => x.id);
 
 		scr.text(4, 2, "S  RECEIPT  TIME            CASHIER   TENDER      TOTAL", { color: "white", bright: true });
@@ -36,16 +37,15 @@ export const receipts = panel<ReceiptsState, Env>({
 	async handle(ctx, s, inp) {
 		s.msg = s.errSel = undefined;
 		const rows = listRows(ctx, FIRST);
+		const moved = scroll(ctx, s, inp.aid, rows);
+		if (moved !== undefined) {
+			s.msg = moved;
+			return s;
+		}
 		switch (inp.aid) {
 			case pf(3):
 			case pf(12):
 				return s.back;
-			case pf(7):
-				s.top = Math.max((s.top ?? 0) - rows, 0);
-				return s;
-			case pf(8):
-				s.top = (s.top ?? 0) + rows;
-				return s;
 			case "ENTER":
 				break;
 			default:

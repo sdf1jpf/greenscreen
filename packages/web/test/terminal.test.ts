@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { decodeScreen, encodeRequest, encodeSnapshot } from "../public/protocol.js";
 import { Lock, Screen } from "../public/screen.js";
+import { PLACEHOLDER, typed } from "../public/softkeys.js";
 
 const response = {
 	v: 1,
@@ -113,5 +114,15 @@ describe("browser terminal", () => {
 
 	it("passes a logoff through", () => {
 		expect(decodeScreen({ v: 1, logoff: { message: "LOGGED OFF" } })).toEqual({ logoff: "LOGGED OFF" });
+	});
+});
+
+describe("on-screen keyboard", () => {
+	it("reads what was typed after the placeholder, and Backspace as the placeholder gone", () => {
+		expect(typed(PLACEHOLDER)).toEqual({ text: "", backspaces: 0 });
+		expect(typed(PLACEHOLDER + "ab")).toEqual({ text: "ab", backspaces: 0 });
+		expect(typed(PLACEHOLDER + "a\r\n")).toEqual({ text: "a\n", backspaces: 0 });
+		expect(typed("")).toEqual({ text: "", backspaces: 1 });
+		expect(typed("x")).toEqual({ text: "x", backspaces: 0 }); // typed over a selected placeholder
 	});
 });

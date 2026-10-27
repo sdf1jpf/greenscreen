@@ -213,6 +213,19 @@ call the application on its logon screen and status line:
 responding". `banner` is
 optional. A client that gets a 404 here falls back to its own defaults.
 
+## Logon
+
+`POST /v1/session`, with no body, signs the caller on and answers `201`
+with the userid the screens will show:
+
+```json
+{ "userid": "JFRANK" }
+```
+
+A client calls it after signing in through Cloudflare Access, to check the
+sign-in worked before it asks for the first screen with `START`. A `401`
+means the request was not signed on.
+
 ## Commarea
 
 `state` is opaque to clients. A server may sign it (`@greenscreen-dev/worker`

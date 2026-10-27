@@ -14,6 +14,7 @@ export {
 export { fieldValues, helpTable, values, type FieldHelp, type FieldHelpLookup, type Value } from "./fieldhelp.js";
 export { helpProgram, tutorialKeys } from "./help.js";
 export { errorResponse, HttpError, int, json, noContent, readJSON, str, type ErrorCode } from "./http.js";
+export { page, position, scroll, type Scrolled } from "./list.js";
 export { logoff, menuProgram, type Menu, type MenuOptions, type Menus, type Option } from "./menu.js";
 export {
 	isLogoff, panel, pf, takeDownload, takeFill, withDownload, withFill,

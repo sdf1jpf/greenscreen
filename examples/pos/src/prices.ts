@@ -1,4 +1,4 @@
-import { header, invalidKey, keys, label, lpad, message, msgId, newScreen, pad, panel, pf, value } from "@greenscreen-dev/worker";
+import { header, invalidKey, keys, label, lpad, message, msgId, newScreen, pad, page, panel, pf, position, right, scroll, value } from "@greenscreen-dev/worker";
 import { cents, dollars, listRows, store, type Env, type PriceState, type PricesState } from "./common";
 
 // POS050 PRICE LIST: every product, by SKU. C beside one changes its price.
@@ -11,8 +11,9 @@ export const prices = panel<PricesState, Env>({
 		header(scr, ctx, "PRICE LIST");
 		const products = await store(ctx).products();
 		const rows = listRows(ctx, FIRST);
-		const top = Math.min(s.top ?? 0, Math.max(products.length - rows, 0));
-		const shown = products.slice(top, top + rows);
+		const shown = page(s, products, rows);
+		const at = position(s, rows);
+		if (at) scr.text(3, right(scr, 80) - at.length, at, { color: "white" });
 		s.skus = shown.map((p) => p.sku);
 		scr.text(4, 2, "S  SKU          DESCRIPTION                     PRICE", { color: "white", bright: true });
 		shown.forEach((p, i) => {
@@ -30,16 +31,15 @@ export const prices = panel<PricesState, Env>({
 	handle(ctx, s, inp) {
 		s.msg = s.errSel = undefined;
 		const rows = listRows(ctx, FIRST);
+		const moved = scroll(ctx, s, inp.aid, rows);
+		if (moved !== undefined) {
+			s.msg = moved;
+			return s;
+		}
 		switch (inp.aid) {
 			case pf(3):
 			case pf(12):
 				return s.back;
-			case pf(7):
-				s.top = Math.max((s.top ?? 0) - rows, 0);
-				return s;
-			case pf(8):
-				s.top = (s.top ?? 0) + rows;
-				return s;
 			case "ENTER":
 				break;
 			default:

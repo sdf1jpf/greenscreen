@@ -1,4 +1,5 @@
 import { fieldValues, type FieldHelpLookup, type Value } from "./fieldhelp.js";
+import { page, position, scroll } from "./list.js";
 import { header, keys, message, msgId, newScreen, pad, type Ctx } from "./screen.js";
 import { pf, withFill, type HelpState, type Next, type Program } from "./program.js";
 
@@ -46,13 +47,12 @@ export function helpProgram<E>(lookup: FieldHelpLookup<E>, tutorial = tutorialKe
 				}
 				const first = listTop(fh.lines.length);
 				const rows = listRows(ctx, fh.lines.length);
-				const top = Math.min(h.top ?? 0, Math.max(values.length - rows, 0));
+				const shown = page(h, values, rows);
+				const top = h.top!;
 				const width = Math.max(...values.map((x) => x.code.length));
 				scr.text(first - 1, 4, "VALID VALUES - TYPE S BESIDE ONE AND PRESS ENTER TO USE IT", { color: "white", bright: true });
-				if (values.length > rows) {
-					scr.text(first - 1, scr.cols - 24, `ROW ${top + 1} TO ${Math.min(top + rows, values.length)} OF ${values.length}`, { color: "white" });
-				}
-				const shown = values.slice(top, top + rows);
+				const at = position(h, rows);
+				if (at) scr.text(first - 1, scr.cols - 24, at, { color: "white" });
 				shown.forEach((x, i) => {
 					const name = `pick:${top + i}`;
 					scr.input(first + i, 4, 1, name, "", { bright: h.errSel === name });
@@ -87,29 +87,23 @@ export function helpProgram<E>(lookup: FieldHelpLookup<E>, tutorial = tutorialKe
 			const fh = await fieldHelp(ctx, h);
 			const values = fh ? await fieldValues(ctx, fh, h.back) : [];
 			if (fh && h.field && values.length > 0) {
-				const rows = listRows(ctx, fh.lines.length);
-				switch (input.aid) {
-					case "ENTER":
-						for (const [name, val] of Object.entries(input.fields)) {
-							const code = val.trim().toUpperCase();
-							if (!name.startsWith("pick:") || code === "") continue;
-							const picked: Value | undefined = values[Number(name.slice(5))];
-							if (code !== "S" && code !== "/") {
-								h.msg = `${msgId(ctx, "0103E")} INVALID SELECTION CODE "${code}" - TYPE S BESIDE A VALUE`;
-								h.errSel = name;
-								return h;
-							}
-							if (picked) return back(h, { [h.field]: picked.code });
+				const moved = scroll(ctx, h, input.aid, listRows(ctx, fh.lines.length));
+				if (moved !== undefined) {
+					h.msg = moved;
+					return h;
+				}
+				if (input.aid === "ENTER") {
+					for (const [name, val] of Object.entries(input.fields)) {
+						const code = val.trim().toUpperCase();
+						if (!name.startsWith("pick:") || code === "") continue;
+						const picked: Value | undefined = values[Number(name.slice(5))];
+						if (code !== "S" && code !== "/") {
+							h.msg = `${msgId(ctx, "0103E")} INVALID SELECTION CODE "${code}" - TYPE S BESIDE A VALUE`;
+							h.errSel = name;
+							return h;
 						}
-						break;
-					case pf(7):
-						if (!h.top) h.msg = `${msgId(ctx, "0101W")} ALREADY AT TOP OF DATA`;
-						h.top = Math.max((h.top ?? 0) - rows, 0);
-						return h;
-					case pf(8):
-						if ((h.top ?? 0) + rows >= values.length) h.msg = `${msgId(ctx, "0102W")} ALREADY AT BOTTOM OF DATA`;
-						else h.top = Math.min((h.top ?? 0) + rows, values.length - rows);
-						return h;
+						if (picked) return back(h, { [h.field]: picked.code });
+					}
 				}
 			}
 			return back(h);

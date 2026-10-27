@@ -82,6 +82,11 @@ export default app;
 | `snapshot` | `POST /v1/snapshot`: Ctrl+S in the terminals saves a PNG or PDF of the screen, drawn by Browser Rendering. |
 | `context` | Your own things on every panel's `ctx`, such as `{ db: ctx.env.DB }`. |
 
+A list longer than the screen scrolls with `page`, `scroll` and
+`position`: the state keeps where it is, PF7 and PF8 move a page, and the
+operator is told at the top or bottom (the POS price list and receipts
+use them).
+
 A panel sends the operator a file with `withDownload(s, { url, name })`; the
 terminals fetch it from your API and save it. The POS example uses
 sessions, live, SEND and snapshots: `src/worker.ts` exports the Durable

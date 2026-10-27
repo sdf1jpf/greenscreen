@@ -134,7 +134,10 @@ describe("point of sale", () => {
 		const first = (r: Reply) => r.screen.fields.find((f) => f.name?.startsWith("sel:"))?.name;
 		expect(first(await t.key("ENTER", { option: "PRICES" }))).toBe("sel:1000");
 		expect(first(await t.key("PF8"))).toBe("sel:1004"); // 16 rows fit: the last page
-		expect(first(await t.key("PF8"))).toBe("sel:1004");
+		const bottom = await t.key("PF8");
+		expect(first(bottom)).toBe("sel:1004");
+		expect(text(bottom)).toContain("POS0102W ALREADY AT BOTTOM OF DATA");
+		expect(text(bottom)).toContain("ROW 5 TO 20 OF 20");
 		expect(first(await t.key("PF7"))).toBe("sel:1000");
 	});
 

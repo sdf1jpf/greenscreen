@@ -3,6 +3,7 @@
 // session. A program's state is plain JSON tagged with its panel name in
 // "p", the key it is registered under.
 
+import type { Scrolled } from "./list.js";
 import type { Ctx, Screen } from "./screen.js";
 
 // PanelState is what every panel's state has. back is the state to return
@@ -15,12 +16,11 @@ export interface PanelState {
 
 // The two panels the framework provides.
 export interface MenuState extends PanelState { p: "menu"; sub?: string; option?: string } // sub: the submenu shown, unset for the primary menu
-export interface HelpState extends PanelState {
+export interface HelpState extends PanelState, Scrolled { // scrolled: the field's list of values
 	p: "help";
 	back: PanelState;
 	field?: string; // help for that field
 	vals?: Record<string, string>; // what the operator had typed on the screen, put back on return
-	top?: number; // the first value shown, when the field has a list of them
 	errSel?: string;
 }
 

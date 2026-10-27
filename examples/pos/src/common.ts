@@ -1,7 +1,7 @@
 // What the panels share: the Worker's bindings, the store, money and the
 // sale arithmetic.
 
-import type { AccessEnv, Ctx, MenuState, PanelState } from "@greenscreen-dev/worker";
+import type { AccessEnv, Ctx, MenuState, PanelState, Scrolled } from "@greenscreen-dev/worker";
 import type { Sessions } from "@greenscreen-dev/worker/sessions";
 import { D1Store, type Line, type Store } from "./store";
 
@@ -38,8 +38,8 @@ export function newSale(back: MenuState, msg?: string): SaleState {
 }
 export interface TenderState extends PanelState { p: "tender"; back: SaleState; errField?: string }
 export interface ReceiptState extends PanelState { p: "receipt"; back: PanelState; id: number; next?: boolean } // next: Enter starts a new sale
-export interface ReceiptsState extends PanelState { p: "receipts"; back: MenuState; top?: number; ids?: number[]; errSel?: string }
-export interface PricesState extends PanelState { p: "prices"; back: MenuState; top?: number; skus?: string[]; errSel?: string }
+export interface ReceiptsState extends PanelState, Scrolled { p: "receipts"; back: MenuState; ids?: number[]; errSel?: string }
+export interface PricesState extends PanelState, Scrolled { p: "prices"; back: MenuState; skus?: string[]; errSel?: string }
 export interface PriceState extends PanelState { p: "price"; back: PricesState; sku: string; errField?: string }
 export interface EodState extends PanelState { p: "eod"; back: MenuState }
 

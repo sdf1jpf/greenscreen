@@ -24,6 +24,12 @@ type Options struct {
 	// PrintDir is where the PRINT key (Ctrl+P) saves a copy of the screen.
 	// Empty means the current directory.
 	PrintDir string
+	// NoPrint turns the PRINT key off, for a terminal whose files would
+	// land on someone else's machine (an SSH session's, say).
+	NoPrint bool
+	// Renderer draws the screen, for a terminal that isn't on this
+	// process's own stdout (an SSH session's). Nil is lipgloss's default.
+	Renderer *lipgloss.Renderer
 	// IdleTimeout logs the session off when no key has been pressed for
 	// this long, as TSO does. Zero never does.
 	IdleTimeout time.Duration
@@ -76,12 +82,16 @@ func New(host Host, opts Options) *Terminal {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+	r := opts.Renderer
+	if r == nil {
+		r = lipgloss.DefaultRenderer()
+	}
 	return &Terminal{
 		host:   host,
 		opts:   opts,
 		scr:    host.Start(),
 		styles: map[styleKey]lipgloss.Style{},
-		r:      lipgloss.DefaultRenderer(),
+		r:      r,
 		active: opts.Now(),
 	}
 }
@@ -178,7 +188,9 @@ func (t *Terminal) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if s == "ctrl+p" {
 		// Like a 3270 local copy: the screen goes to the printer, here a
 		// text file, without involving the host.
-		if _, err := t.Print(); err != nil {
+		if t.opts.NoPrint {
+			t.print = "NO PRT"
+		} else if _, err := t.Print(); err != nil {
 			t.print = "PRT ERR"
 		} else {
 			t.print = "PRINTED"

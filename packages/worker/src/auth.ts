@@ -196,3 +196,36 @@ function same(a: string, b: string): boolean {
 	for (let i = 0; i < Math.max(a.length, b.length); i++) d |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
 	return d === 0;
 }
+
+// The header a gateway names who it signs on in.
+export const GATEWAY_USER_HEADER = "Greenscreen-User";
+
+const EMAIL = /^[^\s@]+@[^\s@]+$/;
+
+// gatewayAuth lets a gateway that signs people on itself, such as
+// `greenscreen serve-ssh` with its authorized keys, say who each request is
+// for. The gateway signs on through auth as usual (with its own service
+// token, say); when that identity is one of gateways, the request is for the
+// email in the Greenscreen-User header instead, the same identity Access
+// would give that person, so their userid, locks and messages follow them
+// between SSH and a browser. Anyone else naming a user, and a gateway naming
+// no one, is refused.
+export function gatewayAuth<E>(
+	auth: Auth<E>,
+	gateways: (env: E) => string[] | undefined,
+	userId: (claims: Claims) => string = userIdFor,
+): Auth<E> {
+	return async (env, req) => {
+		const got = await auth(env, req);
+		const id = (typeof got === "string" ? got : got.id).toLowerCase();
+		const gateway = (gateways(env) ?? []).some((g) => g.trim().toLowerCase() === id);
+		const named = req.headers.get(GATEWAY_USER_HEADER)?.trim().toLowerCase();
+		if (!named) {
+			if (gateway) throw new HttpError(401, "unauthorized", `a gateway must name who it signs on in ${GATEWAY_USER_HEADER}`);
+			return got;
+		}
+		if (!gateway) throw new HttpError(401, "unauthorized", `only a gateway may send ${GATEWAY_USER_HEADER}`);
+		if (!EMAIL.test(named)) throw new HttpError(401, "unauthorized", `${GATEWAY_USER_HEADER} must be an email`);
+		return identityFor({ email: named }, userId);
+	};
+}

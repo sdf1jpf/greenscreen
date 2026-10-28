@@ -27,6 +27,31 @@ func (t ServiceToken) Headers(context.Context) (http.Header, error) {
 	return h, nil
 }
 
+// UserHeader is where a gateway names who a request is for: see
+// gatewayAuth in the Worker.
+const UserHeader = "Greenscreen-User"
+
+// OnBehalf is a gateway's own Access credentials, such as its service
+// token, sending each request for User, a person it has signed on itself
+// (by SSH key, say). The application must trust the gateway to do that.
+type OnBehalf struct {
+	Gateway Access
+	User    string // an email
+}
+
+func (o OnBehalf) Headers(ctx context.Context) (http.Header, error) {
+	h := http.Header{}
+	if o.Gateway != nil {
+		g, err := o.Gateway.Headers(ctx)
+		if err != nil {
+			return nil, err
+		}
+		h = g.Clone()
+	}
+	h.Set(UserHeader, o.User)
+	return h, nil
+}
+
 // Cloudflared signs in with the cloudflared CLI, which opens a browser for
 // the team's identity provider and caches the resulting app token.
 type Cloudflared struct {

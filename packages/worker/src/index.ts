@@ -3,7 +3,7 @@
 
 export { createApp, signedOn, uid, user, SNAPSHOTS_PER_MINUTE, type AppConfig, type AppEnv } from "./app.js";
 export {
-	accessAuth, serviceTokenAuth, tokenHash, userIdFor, ASSERTION_HEADER, CLIENT_ID_HEADER, CLIENT_SECRET_HEADER,
+	accessAuth, gatewayAuth, serviceTokenAuth, tokenHash, userIdFor, ASSERTION_HEADER, CLIENT_ID_HEADER, CLIENT_SECRET_HEADER, GATEWAY_USER_HEADER,
 	type AccessEnv, type Auth, type Claims, type Identity,
 } from "./auth.js";
 export { seal, open } from "./commarea.js";

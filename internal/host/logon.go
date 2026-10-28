@@ -52,8 +52,13 @@ func (l *logon) Render(s *Session) *t3.Screen {
 	scr.Text(dy+13, dx+12, "HOST . . . . . : "+strings.ToUpper(s.api().Host()), t3.WithColor(t3.Blue))
 
 	scr.Text(dy+15, dx+12, "PRESS ENTER TO LOG ON.", t3.WithColor(t3.Turquoise))
-	scr.Text(dy+16, dx+12, "Sign-on is through Cloudflare Access; a browser window", t3.WithColor(t3.Yellow))
-	scr.Text(dy+17, dx+12, "opens if you are not already signed in.", t3.WithColor(t3.Yellow))
+	signOn := s.cfg.SignOn
+	if len(signOn) == 0 {
+		signOn = []string{"Sign-on is through Cloudflare Access; a browser window", "opens if you are not already signed in."}
+	}
+	for i, line := range signOn[:min(len(signOn), 2)] {
+		scr.Text(dy+16+i, dx+12, line, t3.WithColor(t3.Yellow))
+	}
 	scr.Text(dy+20, dx+12, "UNAUTHORIZED ACCESS TO THIS SYSTEM IS PROHIBITED.", t3.WithColor(t3.Red))
 
 	message(scr, l.msg)

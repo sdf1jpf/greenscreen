@@ -2,6 +2,9 @@
 // application. It runs in your local terminal and talks to the
 // application's API over HTTP; the application names itself through
 // GET /v1/screen/info, so one binary serves every app.
+//
+// `greenscreen serve-ssh` serves the same terminal over SSH instead, so
+// anyone with an SSH client can use the application.
 package main
 
 import (
@@ -22,6 +25,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "serve-ssh" {
+		if err := serveSSH(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "greenscreen:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	defaultURL := os.Getenv("GREENSCREEN_API_URL")
 	if defaultURL == "" {
 		defaultURL = "http://localhost:8787" // wrangler dev

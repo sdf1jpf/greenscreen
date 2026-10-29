@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	accessAuth, createApp, header, userIdFor, SNAPSHOTS_PER_MINUTE, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, serviceTokenAuth, tokenHash, values,
+	accessAuth, createApp, gatewayAuth, header, userIdFor, SNAPSHOTS_PER_MINUTE, helpTable, invalidKey, keys, menuProgram, message, newScreen, panel, pf, serviceTokenAuth, tokenHash, values,
 	USER_HEADER, type AccessEnv, type AppConfig, type PanelState, type ScreenJSON,
 } from "../src";
 
@@ -401,6 +401,28 @@ describe("serviceTokenAuth", () => {
 		expect((await who({ "CF-Access-Client-Id": "reg-2.access", "CF-Access-Client-Secret": "s3cret" })).status).toBe(401);
 		expect((await who({})).status).toBe(401);
 		expect((await a.request("/v1/whoami", { headers: { "CF-Access-Client-Id": "reg-1.access", "CF-Access-Client-Secret": "s3cret" } }, {})).status).toBe(401);
+	});
+});
+
+describe("gatewayAuth", () => {
+	it("signs on the person a gateway names, and lets no one else name anyone", async () => {
+		const hash = await tokenHash("s3cret");
+		const a = createApp<Env & { TOKENS?: Record<string, string>; GATEWAYS?: string[] }>({
+			app: { title: "TEST SYSTEM", prefix: "TST", system: "SYS9" },
+			programs: { menu },
+			auth: gatewayAuth(serviceTokenAuth((env) => env.TOKENS), (env) => env.GATEWAYS),
+		});
+		a.get("/v1/whoami", a.signedOn, (c) => c.json({ user: c.get("user"), uid: c.get("uid") }));
+		const env = { TOKENS: { "ssh.access": hash, "reg-1.access": hash }, GATEWAYS: ["SSH.access"] };
+		const who = (id: string, user?: string) =>
+			a.request("/v1/whoami", {
+				headers: { "CF-Access-Client-Id": id, "CF-Access-Client-Secret": "s3cret", ...(user ? { "Greenscreen-User": user } : {}) },
+			}, env);
+		expect(await (await who("ssh.access", "John.Smith@Example.com")).json()).toEqual({ user: "JOHNSMIT", uid: "john.smith@example.com" });
+		expect((await who("ssh.access")).status).toBe(401); // a gateway is never anyone itself
+		expect((await who("ssh.access", "not an email")).status).toBe(401);
+		expect((await who("reg-1.access", "john.smith@example.com")).status).toBe(401);
+		expect(await (await who("reg-1.access")).json()).toEqual({ user: "REG1", uid: "reg-1.access" });
 	});
 });
 

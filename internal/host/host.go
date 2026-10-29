@@ -63,10 +63,11 @@ type Config struct {
 	Prefix      string // starts the terminal's own message IDs, e.g. "POS"; default "GSC"
 	Banner      []string
 	Backend     Backend
-	DownloadDir string // where files sent with a screen are saved
-	Live        bool   // the application serves GET /v1/live
-	Snapshots   bool   // the application serves POST /v1/snapshot
-	HaveInfo    bool   // the above came from the application (SetInfo)
+	DownloadDir string   // where files sent with a screen are saved; empty, none are
+	SignOn      []string // how Enter signs on, two lines for the logon screen; default Cloudflare Access's
+	Live        bool     // the application serves GET /v1/live
+	Snapshots   bool     // the application serves POST /v1/snapshot
+	HaveInfo    bool     // the above came from the application (SetInfo)
 }
 
 // Informer is a Backend that can say what the application calls itself and
@@ -368,6 +369,10 @@ func (s *Session) startListening() {
 		}
 	}()
 }
+
+// Close stops the session's connection to GET /v1/live, for a host that
+// outlives its terminals (an SSH server's).
+func (s *Session) Close() { s.stopListening() }
 
 func (s *Session) stopListening() {
 	s.mu.Lock()
